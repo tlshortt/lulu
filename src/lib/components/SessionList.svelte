@@ -15,7 +15,7 @@
   </div>
 {:else}
   <ul class="space-y-2 pb-6">
-    {#each $sessions as session}
+    {#each $sessions as session (session.id)}
       <li>
         <button
           class={`flex w-full flex-col gap-1 rounded-md border border-border px-3 py-2 text-left text-sm transition ${

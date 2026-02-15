@@ -5,9 +5,20 @@ import tailwindcss from "@tailwindcss/vite";
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
+// @ts-expect-error process is a nodejs global
+const isVitest = process.env.VITEST;
+
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [tailwindcss(), sveltekit()],
+  test: {
+    environment: "jsdom",
+    include: ["src/**/*.test.ts"],
+    setupFiles: ["src/test/setup.ts"],
+  },
+  resolve: {
+    conditions: isVitest ? ["browser", "svelte"] : [],
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
@@ -22,7 +33,7 @@ export default defineConfig(async () => ({
       ? {
           protocol: "ws",
           host,
-          port: 1421,
+          port: 1420,
         }
       : undefined,
     watch: {
