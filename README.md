@@ -1,7 +1,36 @@
-# Tauri + SvelteKit + TypeScript
+# Lulu
 
-This template should help get you started developing with Tauri, SvelteKit and TypeScript in Vite.
+Lulu is a native desktop app for running and monitoring multiple Claude Code sessions in parallel. It gives you a single dashboard to launch named sessions, track status, and inspect live output without juggling terminal windows.
 
-## Recommended IDE Setup
+## Stack
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
+- Tauri v2 + Rust backend
+- SvelteKit (Svelte 5) + TypeScript frontend
+- Vite for dev/build tooling
+- SQLite (`rusqlite`) for local session persistence
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20+
+- Bun
+- Rust toolchain (Cargo)
+
+### Install
+
+```bash
+bun install
+```
+
+### Run in development
+
+```bash
+bun run tauri dev
+```
+
+### Build
+
+```bash
+bun run tauri build
+```
