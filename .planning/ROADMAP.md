@@ -31,12 +31,16 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Rust backend can spawn and monitor a single cc-sdk process
   4. Basic IPC channel streams events from Rust to Svelte
   5. Project addresses 6 critical pitfalls (SQLite concurrency, bounded channels, IPC blocking, process zombies, cc-sdk API stability, client isolation)
-**Plans**: 3 plans
+**Plans**: 7 plans
 
 Plans:
 - [x] 01-01-PLAN.md — Tauri + Svelte scaffold with dark UI
 - [x] 01-02-PLAN.md — SQLite database layer with WAL mode
 - [x] 01-03-PLAN.md — cc-sdk CLI spawner with IPC
+- [ ] 01-04-PLAN.md — Fix Svelte app shell render (runes config + init)
+- [ ] 01-05-PLAN.md — Structured session output UI + buffering
+- [x] 01-06-PLAN.md — Lint/format enforcement + unit test scaffolds
+- [ ] 01-07-PLAN.md — CLI spawn + IPC integration tests
 
 ### Phase 2: Single Session Core
 **Goal**: User can launch one named Claude Code session and view its live streaming output
@@ -125,7 +129,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Architecture | 3/3 | Ready to execute | - |
+| 1. Foundation & Architecture | 4/7 | In progress | - |
 | 2. Single Session Core | 0/TBD | Not started | - |
 | 3. Multi-Session Orchestration | 0/TBD | Not started | - |
 | 4. Security & Approval System | 0/TBD | Not started | - |
