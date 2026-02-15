@@ -27,7 +27,7 @@
               ? "bg-background/70 text-foreground"
               : "bg-background/30 text-foreground/70 hover:bg-background/50"
           }`}
-          on:click={() => selectSession(session.id)}
+          onclick={() => selectSession(session.id)}
           type="button"
         >
           <span class="font-medium">{session.name}</span>

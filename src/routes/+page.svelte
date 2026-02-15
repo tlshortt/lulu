@@ -18,6 +18,34 @@
   onMount(() => {
     void initSessionListeners();
     void loadSessions();
+
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "n") {
+        return;
+      }
+
+      if (!event.metaKey && !event.ctrlKey) {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      openNewSession();
+    };
+
+    window.addEventListener("keydown", handleShortcut);
+
+    return () => {
+      window.removeEventListener("keydown", handleShortcut);
+    };
   });
 </script>
 

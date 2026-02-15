@@ -6,11 +6,11 @@
     onClose?: () => void;
   }>();
 
-  let name = "";
-  let prompt = "";
-  let workingDir = "";
-  let isSubmitting = false;
-  let error: string | null = null;
+  let name = $state("");
+  let prompt = $state("");
+  let workingDir = $state("");
+  let isSubmitting = $state(false);
+  let error = $state<string | null>(null);
 
   const resetForm = () => {
     name = "";
@@ -52,7 +52,8 @@
 
     try {
       await spawnSession(name.trim(), prompt.trim(), workingDir.trim());
-      handleClose();
+      resetForm();
+      onClose();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to start session.";
