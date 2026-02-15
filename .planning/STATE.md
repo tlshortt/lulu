@@ -10,25 +10,25 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 ## Current Position
 
 Phase: 1 of 6 (Foundation & Architecture)
-Plan: 6 of 7 (01-06 complete)
+Plan: 6 of 7 (01-07 complete)
 Status: In progress
-Last activity: 2026-02-15 — Completed 01-06 plan (lint/format/test scaffolds)
+Last activity: 2026-02-15 — Completed 01-07 plan (CLI spawn + IPC integration tests)
 
-Progress: [█████████░] 86%
+Progress: [████████░] 86%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: 7 min
-- Total execution time: 0.45 hours
+- Total plans completed: 5
+- Average duration: 5 min
+- Total execution time: 0.47 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1 (Foundation & Architecture) | 4/7 | 27 min | 7 min |
-| Phase 01-foundation-architecture P06 | 6 min | 2 tasks | 35 files |
+| 1 (Foundation & Architecture) | 6/7 | 28 min | 5 min |
+| Phase 01-foundation-architecture P05 | 3 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -45,6 +45,10 @@ Recent decisions affecting current work:
 - [Phase 01-foundation-architecture]: Used Svelte writable stores for session state to keep TS modules compiler-safe
 - [Phase 01-foundation-architecture]: Polled child.try_wait in background to avoid blocking kill operations
 - [Phase 01-foundation-architecture]: Use ESLint flat config with Svelte parser + TypeScript parser for Svelte 5
+- [Phase 01-foundation-architecture]: Use env!(CARGO_BIN_EXE_lulu_test_cli) to guarantee tests target the compiled fixture binary
+- [Phase 01-foundation-architecture]: Add a lightweight SessionEvent parser helper in session::cli to validate spawn + parse behavior directly in integration tests
+- [Phase 01-foundation-architecture]: Keep a compatibility listener for legacy session-output/session-complete/session-error while primary flow uses session-event
+- [Phase 01-foundation-architecture]: Expose activeSessionId as canonical store and keep selectedSessionId alias to avoid breaking existing consumers
 
 ### Pending Todos
 
@@ -59,9 +63,9 @@ None yet.
 
 ## Session Continuity
 
-Last Session: 2026-02-15
-Stopped At: Completed 01-foundation-architecture-06-PLAN.md
+Last Session: 2026-02-15 12:40 EST
+Stopped At: Completed 01-07-PLAN.md
 Resume File: None
 
 ---
-*Last updated: 2026-02-15 after completing 01-06*
+*Last updated: 2026-02-15 after 01-07 execution*
