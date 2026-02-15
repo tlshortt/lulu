@@ -5,30 +5,32 @@
 See: .planning/PROJECT.md (updated 2026-02-14)
 
 **Core value:** Run and monitor multiple Claude Code instances simultaneously from a single dashboard
-**Current focus:** Phase 1 - Foundation & Architecture
+**Current focus:** Phase 2 - Single Session Core
 
 ## Current Position
 
-Phase: 1 of 6 (Foundation & Architecture)
-Plan: 6 of 7 (01-05 complete)
+Phase: 2 of 6 (Single Session Core)
+Plan: 2 of 2 (02-01 complete)
 Status: In progress
-Last activity: 2026-02-15 — Completed 01-05 plan (structured session output rendering)
+Last activity: 2026-02-15 — Completed 02-01 plan (single-session backend runtime hardening)
 
-Progress: [████████░] 86%
+Progress: [█████████░] 88%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
+- Total plans completed: 7
 - Average duration: 5 min
-- Total execution time: 0.52 hours
+- Total execution time: 0.62 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 (Foundation & Architecture) | 6/7 | 31 min | 5 min |
+| 2 (Single Session Core) | 1/2 | 6 min | 6 min |
 | Phase 01-foundation-architecture P05 | 3 min | 3 tasks | 6 files |
+| Phase 02 P01 | 6 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -49,6 +51,8 @@ Recent decisions affecting current work:
 - [Phase 01-foundation-architecture]: Add a lightweight SessionEvent parser helper in session::cli to validate spawn + parse behavior directly in integration tests
 - [Phase 01-foundation-architecture]: Keep a compatibility listener for legacy session-output/session-complete/session-error while primary flow uses session-event
 - [Phase 01-foundation-architecture]: Expose activeSessionId as canonical store and keep selectedSessionId alias to avoid breaking existing consumers
+- [Phase 02-single-session-core]: Normalize Claude stream-json assistant/user/result frames into one typed payload contract before emitting session-event
+- [Phase 02-single-session-core]: Use a single terminal reducer guard to prevent duplicate completion/failure transitions from stream and child-exit paths
 
 ### Pending Todos
 
@@ -63,9 +67,9 @@ None yet.
 
 ## Session Continuity
 
-Last Session: 2026-02-15 12:40 EST
-Stopped At: Completed 01-foundation-architecture-05-PLAN.md
+Last Session: 2026-02-15 14:50 EST
+Stopped At: Completed 02-01-PLAN.md
 Resume File: None
 
 ---
-*Last updated: 2026-02-15 after 01-05 execution*
+*Last updated: 2026-02-15 after 02-01 execution*
