@@ -2,9 +2,30 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use crate::db::Database;
+use crate::session::projection::normalize_failure_reason;
+use serde_json::json;
+use tauri::{AppHandle, Emitter};
 use tokio::process::Child;
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
+
+fn is_terminal_status(status: &str) -> bool {
+    matches!(status, "completed" | "failed" | "killed")
+}
+
+fn normalize_terminal_status(status: &str) -> &str {
+    if status == "complete" || status == "done" {
+        "completed"
+    } else {
+        status
+    }
+}
+
+pub struct TerminalTransitionResult {
+    pub final_status: String,
+    pub failure_message: Option<String>,
+}
 
 pub struct SessionRuntime {
     pub id: String,
@@ -78,6 +99,101 @@ impl SessionSupervisor {
             return runtime.begin_terminal_transition();
         }
         false
+    }
+
+    pub async fn finalize_terminal_transition(
+        &self,
+        db: &Database,
+        session_id: &str,
+        status: &str,
+        failure_message: Option<String>,
+    ) -> Result<Option<TerminalTransitionResult>, String> {
+        self.finalize_terminal_transition_internal(
+            db,
+            session_id,
+            status,
+            failure_message,
+        )
+        .await
+    }
+
+    pub async fn finalize_terminal_transition_and_emit(
+        &self,
+        app: &AppHandle,
+        db: &Database,
+        session_id: &str,
+        status: &str,
+        seq: &std::sync::atomic::AtomicU64,
+        failure_message: Option<String>,
+        emit_structured_status: bool,
+    ) -> Result<Option<TerminalTransitionResult>, String> {
+        self.finalize_terminal_transition_internal(
+            db,
+            session_id,
+            status,
+            failure_message,
+        )
+        .await
+        .map(|transition| {
+            if let Some(ref transition) = transition {
+                if emit_structured_status {
+                    let status_event = json!({
+                        "type": "status",
+                        "data": {
+                            "session_id": session_id,
+                            "seq": seq.fetch_add(1, Ordering::SeqCst),
+                            "timestamp": chrono::Utc::now().to_rfc3339(),
+                            "status": transition.final_status,
+                            "message": transition.failure_message,
+                        }
+                    });
+                    let _ = app.emit("session-event", status_event);
+                }
+            }
+
+            transition
+        })
+    }
+
+    async fn finalize_terminal_transition_internal(
+        &self,
+        db: &Database,
+        session_id: &str,
+        status: &str,
+        failure_message: Option<String>,
+    ) -> Result<Option<TerminalTransitionResult>, String> {
+        if !self.begin_terminal_transition(session_id).await {
+            return Ok(None);
+        }
+
+        let final_status = normalize_terminal_status(status);
+        if is_terminal_status(final_status) {
+            db.transition_session_terminal(session_id, final_status)
+                .map_err(|err| format!("Failed terminal transition for session {}: {}", session_id, err))?;
+        } else {
+            db.update_session_status(session_id, final_status)
+                .map_err(|err| format!("Failed status update for session {}: {}", session_id, err))?;
+        }
+
+        let activity_timestamp = chrono::Utc::now().to_rfc3339();
+        db.update_last_activity(session_id, &activity_timestamp)
+            .map_err(|err| format!("Failed activity update for session {}: {}", session_id, err))?;
+
+        let normalized_failure = if final_status == "failed" || final_status == "killed" {
+            normalize_failure_reason(failure_message.as_deref())
+        } else {
+            None
+        };
+
+        if final_status == "failed" || final_status == "killed" {
+            db.update_failure_reason(session_id, normalized_failure.as_deref())
+                .map_err(|err| format!("Failed failure update for session {}: {}", session_id, err))?;
+        }
+
+        Ok(Some(TerminalTransitionResult {
+            final_status: final_status.to_string(),
+            failure_message: normalized_failure.or(failure_message),
+        }))
     }
 
     pub async fn was_killed(&self, session_id: &str) -> bool {
