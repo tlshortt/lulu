@@ -59,4 +59,30 @@ describe("NewSessionModal", () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
+
+  it("calls spawnSession exactly once while submitting", async () => {
+    spawnSessionMock.mockImplementation(
+      () => new Promise<string>(() => undefined),
+    );
+
+    render(NewSessionModal, {
+      props: { open: true, onClose: vi.fn() },
+    });
+
+    await fireEvent.input(screen.getByLabelText("Session name"), {
+      target: { value: "Single Call" },
+    });
+    await fireEvent.input(screen.getByLabelText("Prompt"), {
+      target: { value: "Run once" },
+    });
+    await fireEvent.input(screen.getByLabelText("Working directory"), {
+      target: { value: "/tmp/project" },
+    });
+
+    const submit = screen.getByRole("button", { name: "Start session" });
+    await fireEvent.click(submit);
+    await fireEvent.click(submit);
+
+    expect(spawnSessionMock).toHaveBeenCalledTimes(1);
+  });
 });

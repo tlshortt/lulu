@@ -1,12 +1,16 @@
 import { render, screen } from "@testing-library/svelte";
 import { describe, it, expect, beforeEach } from "vitest";
-import { sessions, selectedSessionId } from "$lib/stores/sessions";
+import {
+  activeSessionId,
+  selectedSessionId,
+  sessions,
+} from "$lib/stores/sessions";
 import MainArea from "./MainArea.svelte";
 
 describe("MainArea", () => {
   beforeEach(() => {
     sessions.set([]);
-    selectedSessionId.set(null);
+    activeSessionId.set(null);
   });
 
   it("shows empty state when there are no sessions", () => {
@@ -28,11 +32,29 @@ describe("MainArea", () => {
         updated_at: "2025-01-01T00:00:00Z",
       },
     ]);
-    selectedSessionId.set("test-1");
+    activeSessionId.set("test-1");
 
     render(MainArea);
 
     // The empty state should NOT be shown
     expect(screen.queryByText("No active sessions")).toBeNull();
+  });
+
+  it("keeps selectedSessionId alias compatibility with activeSessionId", () => {
+    sessions.set([
+      {
+        id: "compat-1",
+        name: "Compatibility Session",
+        status: "running",
+        working_dir: "/tmp",
+        created_at: "2025-01-01T00:00:00Z",
+        updated_at: "2025-01-01T00:00:00Z",
+      },
+    ]);
+    selectedSessionId.set("compat-1");
+
+    render(MainArea);
+
+    expect(screen.queryByText("Pick a session to view output")).toBeNull();
   });
 });

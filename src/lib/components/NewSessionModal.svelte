@@ -42,6 +42,10 @@
   };
 
   const handleSubmit = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
     if (!name.trim() || !prompt.trim() || !workingDir.trim()) {
       error = "Please fill out all fields.";
       return;
