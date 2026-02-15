@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 pub mod session;
-pub use session::Session;
+pub use session::{Session, SessionDashboardRow, SessionMessage};
 
 pub struct Database {
     pub conn: Mutex<Connection>,
@@ -26,7 +26,10 @@ pub fn init_database(db_path: &Path) -> Result<Database> {
             status TEXT NOT NULL DEFAULT 'created',
             working_dir TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
+            updated_at TEXT NOT NULL,
+            last_activity_at TEXT,
+            failure_reason TEXT,
+            worktree_path TEXT
         );
 
         CREATE TABLE IF NOT EXISTS messages (
@@ -41,7 +44,33 @@ pub fn init_database(db_path: &Path) -> Result<Database> {
         CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);",
     )?;
 
+    ensure_session_column(&conn, "last_activity_at", "TEXT")?;
+    ensure_session_column(&conn, "failure_reason", "TEXT")?;
+    ensure_session_column(&conn, "worktree_path", "TEXT")?;
+
     Ok(Database { conn: Mutex::new(conn) })
+}
+
+fn ensure_session_column(conn: &Connection, column_name: &str, column_definition: &str) -> Result<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(sessions)")?;
+    let mut rows = stmt.query([])?;
+
+    while let Some(row) = rows.next()? {
+        let existing_name: String = row.get(1)?;
+        if existing_name == column_name {
+            return Ok(());
+        }
+    }
+
+    conn.execute(
+        &format!(
+            "ALTER TABLE sessions ADD COLUMN {} {}",
+            column_name, column_definition
+        ),
+        [],
+    )?;
+
+    Ok(())
 }
 
 #[derive(Debug, thiserror::Error)]
