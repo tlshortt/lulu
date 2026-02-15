@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-14)
 
 **Core value:** Run and monitor multiple Claude Code instances simultaneously from a single dashboard
-**Current focus:** Phase 2 - Single Session Core
+**Current focus:** Phase 3 - Multi-Session Orchestration
 
 ## Current Position
 
-Phase: 2 of 6 (Single Session Core)
-Plan: 2 of 2 (02-02 complete)
-Status: Complete
-Last activity: 2026-02-15 — Completed 02-02 plan (frontend launch flow and canonical stream rendering)
+Phase: 3 of 6 (Multi-Session Orchestration)
+Plan: 1 of 3 (in progress)
+Status: Executing Phase 3 multi-session orchestration plans
+Last activity: 2026-02-15 — Completed 03-01 backend worktree isolation + projection + startup reconciliation
 
-Progress: [██████████] 100%
+Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
+- Total plans completed: 10
 - Average duration: 5 min
 - Total execution time: 0.70 hours
 
@@ -27,11 +27,12 @@ Progress: [██████████] 100%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1 (Foundation & Architecture) | 6/7 | 31 min | 5 min |
+| 1 (Foundation & Architecture) | 8/8 | 31 min | 5 min |
 | 2 (Single Session Core) | 2/2 | 11 min | 5 min |
 | Phase 01-foundation-architecture P05 | 3 min | 3 tasks | 6 files |
 | Phase 02 P01 | 6 min | 3 tasks | 7 files |
 | Phase 02 P02 | 5 min | 3 tasks | 7 files |
+| Phase 03 P01 | 6 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -56,6 +57,9 @@ Recent decisions affecting current work:
 - [Phase 02-single-session-core]: Use a single terminal reducer guard to prevent duplicate completion/failure transitions from stream and child-exit paths
 - [Phase 02-single-session-core]: Normalize frontend status aliases (complete/done/error) to completed/failed before rendering and state updates
 - [Phase 02-single-session-core]: Gate compatibility listeners by canonical session-event presence to prevent duplicate terminal rows
+- [Phase 03]: Normalize all terminal non-success runtime outcomes to dashboard Failed while keeping internal statuses for runtime handling.
+- [Phase 03]: Create one detached git worktree per session under .lulu/worktrees/<session-id> and avoid reusing worktrees across sessions.
+- [Phase 03]: Run startup reconciliation to fail stale starting/running rows and prune orphaned managed worktrees before commands execute.
 
 ### Pending Todos
 
@@ -70,9 +74,9 @@ None yet.
 
 ## Session Continuity
 
-Last Session: 2026-02-15 14:58 EST
-Stopped At: Completed 02-02-PLAN.md
+Last Session: 2026-02-15 16:53 EST
+Stopped At: Completed 03-01-PLAN.md
 Resume File: None
 
 ---
-*Last updated: 2026-02-15 after 02-02 execution*
+*Last updated: 2026-02-15 after completing 03-01 execution*
