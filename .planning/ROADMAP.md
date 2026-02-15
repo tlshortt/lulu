@@ -71,9 +71,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Backend worktree lifecycle, projection schema, and startup reconciliation
-- [ ] 03-02-PLAN.md — SessionSupervisor parallel runtime hardening and crash-isolation tests
-- [ ] 03-03-PLAN.md — Locked dashboard UX rendering and interaction regression coverage
+- [ ] 03-01-PLAN.md — Backend worktree isolation + locked status projection + startup reconciliation
+- [ ] 03-02-PLAN.md — SessionSupervisor parallel runtime isolation + mixed-outcome integration coverage
+- [ ] 03-03-PLAN.md — Locked dashboard list behavior, interactions, and regression protection
 
 ### Phase 4: Security & Approval System
 **Goal**: User controls tool execution through approval prompts with pattern-based auto-approve rules
@@ -138,4 +138,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 6. Persistence & History | 0/2 | Not started | - |
 
 ---
-*Last updated: 2026-02-15 after Phase 3 plan creation*
+*Last updated: 2026-02-15 after Phase 3 replanning from refreshed research/context*
