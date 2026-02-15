@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 ## Current Position
 
 Phase: 3 of 6 (Multi-Session Orchestration)
-Plan: 3 of 3 (complete)
+Plan: 4 of 4 (complete)
 Status: Phase 3 complete (Multi-Session Orchestration)
-Last activity: 2026-02-15 — Completed 03-03 locked dashboard UX + interaction regression coverage
+Last activity: 2026-02-15 — Completed 03-04 projection wiring + supervisor terminal boundary closure
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
+- Total plans completed: 13
 - Average duration: 5 min
-- Total execution time: 0.85 hours
+- Total execution time: 0.92 hours
 
 **By Phase:**
 
@@ -35,6 +35,7 @@ Progress: [██████████] 100%
 | Phase 03 P01 | 6 min | 3 tasks | 8 files |
 | Phase 03 P02 | 3 min | 2 tasks | 6 files |
 | Phase 03 P03 | 6 min | 3 tasks | 7 files |
+| Phase 03 P04 | 4 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,8 @@ Recent decisions affecting current work:
 - [Phase 03]: Use deterministic delay fixture modes to validate mixed-outcome crash isolation without flaky timing.
 - [Phase 03]: Separate sidebar row selection from detail open via dashboardSelectedSessionId.
 - [Phase 03]: Render compact right-aligned activity age labels (s/m/h/d) from session updated timestamps.
+- [Phase 03]: Expose projected dashboard rows through list_dashboard_sessions so projection.rs remains a runtime boundary.
+- [Phase 03]: SessionSupervisor owns terminal persistence and canonical session-event status emission; commands orchestrate only.
 
 ### Pending Todos
 
@@ -80,9 +83,9 @@ None yet.
 
 ## Session Continuity
 
-Last Session: 2026-02-15 18:17 EST
-Stopped At: Completed 03-03-PLAN.md
+Last Session: 2026-02-15 18:35 EST
+Stopped At: Completed 03-04-PLAN.md
 Resume File: None
 
 ---
-*Last updated: 2026-02-15 after completing 03-03 execution*
+*Last updated: 2026-02-15 after completing 03-04 execution*
