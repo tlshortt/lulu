@@ -72,13 +72,38 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| — | — | — |
+| SESS-01 | Phase 2, Phase 3 | Pending |
+| SESS-02 | Phase 3 | Pending |
+| SESS-03 | Phase 3 | Pending |
+| SESS-04 | Phase 6 | Pending |
+| OUT-01 | Phase 2 | Pending |
+| OUT-02 | Phase 6 | Pending |
+| GIT-01 | Phase 2 | Pending |
+| GIT-02 | Phase 3 | Pending |
+| APPR-01 | Phase 4 | Pending |
+| APPR-02 | Phase 4 | Pending |
+| APPR-03 | Phase 4 | Pending |
+| APPR-04 | Phase 4 | Pending |
+| LIFE-01 | Phase 5 | Pending |
+| LIFE-02 | Phase 5 | Pending |
+| LIFE-03 | Phase 3 | Pending |
+| LIFE-04 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 16 total
-- Mapped to phases: 0
-- Unmapped: 16
+- Mapped to phases: 16
+- Unmapped: 0
+
+**Coverage validation:**
+- Phase 1: 0 requirements (infrastructure foundation)
+- Phase 2: 3 requirements (SESS-01 partial, OUT-01, GIT-01)
+- Phase 3: 5 requirements (SESS-01 complete, SESS-02, SESS-03, GIT-02, LIFE-03)
+- Phase 4: 4 requirements (APPR-01, APPR-02, APPR-03, APPR-04)
+- Phase 5: 3 requirements (LIFE-01, LIFE-02, LIFE-04)
+- Phase 6: 2 requirements (SESS-04, OUT-02)
+
+Total: 17 mappings for 16 requirements (SESS-01 spans Phase 2 and Phase 3)
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after initial definition*
+*Last updated: 2026-02-14 after roadmap creation with full traceability*
