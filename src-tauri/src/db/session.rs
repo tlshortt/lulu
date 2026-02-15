@@ -237,6 +237,20 @@ impl Database {
         Ok(sessions)
     }
 
+    pub fn get_session_worktree_path(&self, id: &str) -> Result<Option<String>, DbError> {
+        let conn = self.conn.lock().map_err(|_| DbError::Lock)?;
+
+        let mut stmt = conn.prepare("SELECT worktree_path FROM sessions WHERE id = ?1")?;
+        let mut rows = stmt.query(params![id])?;
+
+        if let Some(row) = rows.next()? {
+            let worktree_path: Option<String> = row.get(0)?;
+            Ok(worktree_path)
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn insert_session_message(
         &self,
         session_id: &str,
