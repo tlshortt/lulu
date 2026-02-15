@@ -23,7 +23,9 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["process", "io-util", "sync", "rt-multi-thread"] }
+tokio-util = { version = "0.7", features = ["codec", "io-util"] }
+which = "5.0"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1.0"
