@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::{collections::HashSet, fs};
 
 #[derive(Debug, Clone)]
 pub struct WorktreeEntry {
@@ -163,7 +164,33 @@ impl WorktreeService {
         Ok(entries)
     }
 
+    pub fn reconcile_managed_worktrees(&self, expected_paths: &[PathBuf]) -> Result<(), String> {
+        let expected: HashSet<PathBuf> = expected_paths.iter().cloned().collect();
+        let worktrees = self.list_worktrees()?;
+
+        for entry in worktrees {
+            if !entry.path.starts_with(&self.worktrees_root) {
+                continue;
+            }
+
+            let is_expected = expected.contains(&entry.path);
+            if is_expected && !entry.prunable && entry.path.exists() {
+                continue;
+            }
+
+            if entry.path.exists() {
+                let _ = fs::remove_dir_all(&entry.path);
+            }
+        }
+
+        self.prune_worktrees()
+    }
+
     pub fn worktrees_root(&self) -> &Path {
         &self.worktrees_root
+    }
+
+    pub fn repo_root(&self) -> &Path {
+        &self.repo_root
     }
 }

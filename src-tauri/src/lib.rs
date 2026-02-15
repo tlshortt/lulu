@@ -2,6 +2,8 @@ use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::Mutex;
 
+use crate::commands::session::reconcile_sessions_on_startup;
+
 pub mod commands;
 pub mod db;
 pub mod session;
@@ -16,6 +18,8 @@ pub fn run() {
             std::fs::create_dir_all(&app_data_dir)?;
             let db_path = app_data_dir.join("lulu.db");
             let database = db::init_database(&db_path)?;
+            reconcile_sessions_on_startup(&database)
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
             app.manage(database);
             app.manage(Arc::new(Mutex::new(SessionManager::new())));
             Ok(())
@@ -25,7 +29,10 @@ pub fn run() {
             commands::spawn_session,
             commands::list_sessions,
             commands::get_session,
+            commands::rename_session,
+            commands::list_session_messages,
             commands::kill_session,
+            commands::delete_session,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {

@@ -1,3 +1,5 @@
+use tauri_app_lib::commands::session::reconcile_sessions_on_startup;
+use tauri_app_lib::db::{init_database, Session};
 use tauri_app_lib::session::projection::{
     normalize_dashboard_status, DASHBOARD_STATUS_COMPLETED, DASHBOARD_STATUS_FAILED,
     DASHBOARD_STATUS_RUNNING,
@@ -68,4 +70,58 @@ fn spawn_uses_session_specific_worktree_path() {
         .remove_worktree_for_session("session-b")
         .expect("second worktree should remove");
     service.prune_worktrees().expect("worktree prune should succeed");
+}
+
+#[test]
+fn startup_reconcile_marks_stale_running_as_failed() {
+    let repo = init_repo();
+    let db_path = repo.path().join("lulu.db");
+    let db = init_database(&db_path).expect("database should initialize");
+
+    let created_at = chrono::Utc::now().to_rfc3339();
+    let session = Session {
+        id: "stale-session".to_string(),
+        name: "stale".to_string(),
+        status: "running".to_string(),
+        working_dir: repo.path().display().to_string(),
+        created_at: created_at.clone(),
+        updated_at: created_at,
+    };
+    db.create_session(&session).expect("session should persist");
+
+    let service = WorktreeService::new(repo.path());
+    let worktree_path = service
+        .create_worktree("stale-session")
+        .expect("worktree should create");
+    db.update_worktree_path("stale-session", Some(&worktree_path.display().to_string()))
+        .expect("worktree path should persist");
+
+    reconcile_sessions_on_startup(&db).expect("startup reconciliation should succeed");
+
+    let stored = db
+        .get_session("stale-session")
+        .expect("session read should succeed")
+        .expect("session should exist");
+    assert_eq!(stored.status, "failed");
+
+    let dashboard = db
+        .list_dashboard_sessions()
+        .expect("dashboard query should succeed");
+    let stale_row = dashboard
+        .iter()
+        .find(|row| row.id == "stale-session")
+        .expect("stale row should exist");
+    assert!(
+        stale_row
+            .failure_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("marked failed on restart"),
+        "stale session should have inline-safe reconcile failure reason"
+    );
+
+    service
+        .remove_worktree_for_session("stale-session")
+        .expect("worktree should remove");
+    service.prune_worktrees().expect("prune should succeed");
 }

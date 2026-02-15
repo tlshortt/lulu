@@ -251,6 +251,39 @@ impl Database {
         }
     }
 
+    pub fn reconcile_stale_inflight_sessions(
+        &self,
+        failure_reason: &str,
+    ) -> Result<Vec<String>, DbError> {
+        let mut conn = self.conn.lock().map_err(|_| DbError::Lock)?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        let mut stmt = tx.prepare("SELECT id FROM sessions WHERE status IN ('starting', 'running')")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+
+        let mut stale_ids = Vec::new();
+        for row in rows {
+            stale_ids.push(row?);
+        }
+        drop(stmt);
+
+        if !stale_ids.is_empty() {
+            let now = chrono::Utc::now().to_rfc3339();
+            tx.execute(
+                "UPDATE sessions
+                 SET status = 'failed',
+                     updated_at = ?1,
+                     last_activity_at = ?1,
+                     failure_reason = ?2
+                 WHERE status IN ('starting', 'running')",
+                params![now, failure_reason],
+            )?;
+        }
+
+        tx.commit()?;
+        Ok(stale_ids)
+    }
+
     pub fn insert_session_message(
         &self,
         session_id: &str,

@@ -4,6 +4,7 @@ use crate::session::projection::normalize_failure_reason;
 use crate::session::{ClaudeCli, SessionManager, WorktreeService};
 use crate::session::{SessionEvent, SessionEventPayload};
 use serde_json::json;
+use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -122,6 +123,49 @@ async fn finalize_session_once(
     }
 
     let _ = remove_session_handle(manager, session_id).await;
+}
+
+pub fn reconcile_sessions_on_startup(db: &Database) -> Result<(), String> {
+    let stale_reason =
+        "Session was still in progress at previous shutdown and was marked failed on restart";
+    let normalized_reason = normalize_failure_reason(Some(stale_reason)).unwrap_or_else(|| {
+        "Session was still in progress at previous shutdown".to_string()
+    });
+
+    db.reconcile_stale_inflight_sessions(&normalized_reason)
+        .map_err(|e| format!("Failed to reconcile stale sessions: {}", e))?;
+
+    let sessions = db
+        .list_sessions()
+        .map_err(|e| format!("Failed to list sessions for worktree reconciliation: {}", e))?;
+
+    let mut expected_by_repo: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
+    for session in sessions {
+        let worktree_path = db
+            .get_session_worktree_path(&session.id)
+            .map_err(|e| format!("Failed to fetch worktree metadata for session {}: {}", session.id, e))?;
+
+        let Some(worktree_path) = worktree_path else {
+            continue;
+        };
+
+        let service = match WorktreeService::from_working_dir(&session.working_dir) {
+            Ok(service) => service,
+            Err(_) => continue,
+        };
+
+        expected_by_repo
+            .entry(service.repo_root().to_path_buf())
+            .or_default()
+            .push(PathBuf::from(worktree_path));
+    }
+
+    for (repo_root, expected_paths) in expected_by_repo {
+        let service = WorktreeService::new(repo_root);
+        service.reconcile_managed_worktrees(&expected_paths)?;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
