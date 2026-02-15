@@ -1,13 +1,12 @@
 use crate::db::{Database, Session, SessionMessage};
-use crate::session::manager::SessionHandle;
 use crate::session::projection::normalize_failure_reason;
-use crate::session::{ClaudeCli, SessionManager, WorktreeService};
+use crate::session::{ClaudeCli, SessionManager, SessionSupervisor, WorktreeService};
 use crate::session::{SessionEvent, SessionEventPayload};
 use serde_json::json;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::mpsc;
@@ -54,14 +53,9 @@ fn is_terminal_status(status: &str) -> bool {
     TERMINAL_STATUSES.contains(&status)
 }
 
-async fn remove_session_handle(
-    manager: &Arc<Mutex<SessionManager>>,
-    session_id: &str,
-) -> Result<(), String> {
+async fn session_supervisor(manager: &Arc<Mutex<SessionManager>>) -> Arc<SessionSupervisor> {
     let manager = manager.lock().await;
-    let mut sessions = manager.sessions.lock().await;
-    sessions.remove(session_id);
-    Ok(())
+    manager.supervisor.clone()
 }
 
 async fn finalize_session_once(
@@ -70,11 +64,11 @@ async fn finalize_session_once(
     session_id: &str,
     status: &str,
     seq: &Arc<AtomicU64>,
-    terminal_emitted: &Arc<AtomicBool>,
     emit_structured_status: bool,
     failure_message: Option<String>,
 ) {
-    if terminal_emitted.swap(true, Ordering::SeqCst) {
+    let supervisor = session_supervisor(manager).await;
+    if !supervisor.begin_terminal_transition(session_id).await {
         return;
     }
 
@@ -122,7 +116,7 @@ async fn finalize_session_once(
         let _ = app.emit("session-error", (session_id, message));
     }
 
-    let _ = remove_session_handle(manager, session_id).await;
+    let _ = supervisor.remove(session_id).await;
 }
 
 pub fn reconcile_sessions_on_startup(db: &Database) -> Result<(), String> {
@@ -253,13 +247,15 @@ pub async fn spawn_session(
     let _ = db.update_last_activity(&session_id, &chrono::Utc::now().to_rfc3339());
 
     let sequence = spawned.seq.clone();
-    let terminal_emitted = Arc::new(AtomicBool::new(false));
+    let supervisor = session_supervisor(manager.inner()).await;
+    let runtime = supervisor
+        .register(session_id.clone(), name.clone(), spawned.child)
+        .await;
 
     let app_event = app.clone();
     let session_id_for_events = session_id.clone();
     let manager_for_events = manager.inner().clone();
     let seq_for_events = sequence.clone();
-    let terminal_for_events = terminal_emitted.clone();
     tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
             let frontend_event = to_frontend_session_event(&event);
@@ -295,7 +291,6 @@ pub async fn spawn_session(
                             &session_id_for_events,
                             status,
                             &seq_for_events,
-                            &terminal_for_events,
                             false,
                             None,
                         )
@@ -325,41 +320,21 @@ pub async fn spawn_session(
         }
     });
 
-    let child_handle = Arc::new(Mutex::new(spawned.child));
-    let killed = Arc::new(Mutex::new(false));
-    let session_handle = SessionHandle {
-        id: session_id.clone(),
-        name: name.clone(),
-        child: child_handle.clone(),
-        killed: killed.clone(),
-    };
-
-    {
-        let manager = manager.lock().await;
-        let mut sessions = manager.sessions.lock().await;
-        sessions.insert(session_id.clone(), session_handle);
-    }
-
     let manager_clone = manager.inner().clone();
     let app_clone = app.clone();
     let session_id_clone = session_id.clone();
-    let child_handle_clone = child_handle.clone();
+    let runtime_for_wait = runtime.clone();
     let seq_clone = sequence.clone();
-    let terminal_emitted_clone = terminal_emitted.clone();
-    let killed_clone = killed.clone();
 
     tokio::spawn(async move {
         let wait_result = {
-            let mut child = child_handle_clone.lock().await;
+            let mut child = runtime_for_wait.child.lock().await;
             child.wait().await
         };
 
         match wait_result {
             Ok(exit_status) => {
-                let was_killed = {
-                    let killed = killed_clone.lock().await;
-                    *killed
-                };
+                let was_killed = runtime_for_wait.was_killed();
                 let terminal = if was_killed {
                     "killed"
                 } else if exit_status.success() {
@@ -374,7 +349,6 @@ pub async fn spawn_session(
                     &session_id_clone,
                     terminal,
                     &seq_clone,
-                    &terminal_emitted_clone,
                     true,
                     None,
                 )
@@ -388,7 +362,6 @@ pub async fn spawn_session(
                     &session_id_clone,
                     "failed",
                     &seq_clone,
-                    &terminal_emitted_clone,
                     true,
                     Some(message),
                 )
@@ -526,17 +499,8 @@ pub async fn kill_session(
 ) -> Result<(), String> {
     db.update_session_status(&id, "killed").map_err(|e| e.to_string())?;
 
-    let manager = manager.lock().await;
-    let sessions = manager.sessions.lock().await;
-
-    if let Some(handle) = sessions.get(&id) {
-        let mut killed = handle.killed.lock().await;
-        if !*killed {
-            let mut child = handle.child.lock().await;
-            let _ = child.kill().await;
-            *killed = true;
-        }
-    }
+    let supervisor = session_supervisor(manager.inner()).await;
+    let _ = supervisor.kill_session(&id).await;
 
     Ok(())
 }
@@ -554,14 +518,10 @@ pub async fn delete_session(
         .get_session_worktree_path(&id)
         .map_err(|e| format!("Failed to get session worktree path: {}", e))?;
 
-    let session_handle = {
-        let manager = manager.lock().await;
-        let mut sessions = manager.sessions.lock().await;
-        sessions.remove(&id)
-    };
-
-    if let Some(handle) = session_handle {
-        let mut child = handle.child.lock().await;
+    let supervisor = session_supervisor(manager.inner()).await;
+    if let Some(runtime) = supervisor.remove(&id).await {
+        runtime.mark_killed();
+        let mut child = runtime.child.lock().await;
         let _ = child.kill().await;
     }
 
