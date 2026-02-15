@@ -81,7 +81,7 @@ Each task was committed atomically:
 None - plan executed exactly as written.
 
 ## Issues Encountered
-None.
+- `gsd-tools state advance-plan/update-progress/record-session` returned parse-field errors against current STATE.md format; position/session fields were updated manually to keep execution state accurate.
 
 ## User Setup Required
 None - no external service configuration required.
