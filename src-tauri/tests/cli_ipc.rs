@@ -13,12 +13,12 @@ async fn cli_override_spawn_emits_parsed_events_in_order() {
 
     let (tx, mut rx) = mpsc::channel(128);
     let session_id = "test-session";
-    let mut child = cli
+    let mut spawned = cli
         .spawn_with_events("ignored prompt", ".", session_id, tx)
         .await
         .expect("spawn should succeed");
 
-    timeout(Duration::from_secs(5), child.wait())
+    timeout(Duration::from_secs(5), spawned.child.wait())
         .await
         .expect("cli should exit")
         .expect("wait should succeed");
@@ -45,20 +45,32 @@ async fn cli_override_spawn_emits_parsed_events_in_order() {
     assert!(
         payloads
             .iter()
+            .any(|p| matches!(p, SessionEventPayload::Thinking { content } if content == "Planning the response")),
+        "expected a parsed thinking event"
+    );
+    assert!(
+        payloads
+            .iter()
             .any(|p| matches!(p, SessionEventPayload::Message { content } if content == "hello from test cli")),
         "expected a parsed message event"
     );
     assert!(
         payloads.iter().any(
-            |p| matches!(p, SessionEventPayload::ToolCall { tool_name, .. } if tool_name == "read_file")
+            |p| matches!(p, SessionEventPayload::ToolCall { call_id, tool_name, .. } if call_id.as_deref() == Some("tool-1") && tool_name == "read_file")
         ),
         "expected a parsed tool_call event"
     );
     assert!(
         payloads.iter().any(
-            |p| matches!(p, SessionEventPayload::ToolResult { tool_name, .. } if tool_name == "read_file")
+            |p| matches!(p, SessionEventPayload::ToolResult { call_id, tool_name, .. } if call_id.as_deref() == Some("tool-1") && tool_name.is_none())
         ),
         "expected a parsed tool_result event"
+    );
+    assert!(
+        payloads
+            .iter()
+            .any(|p| matches!(p, SessionEventPayload::Status { status } if status == "completed")),
+        "expected a terminal completed status event"
     );
 
     let message_idx = payloads
@@ -67,11 +79,15 @@ async fn cli_override_spawn_emits_parsed_events_in_order() {
         .expect("message event should exist");
     let tool_call_idx = payloads
         .iter()
-        .position(|p| matches!(p, SessionEventPayload::ToolCall { tool_name, .. } if tool_name == "read_file"))
+        .position(|p| {
+            matches!(p, SessionEventPayload::ToolCall { call_id, tool_name, .. } if call_id.as_deref() == Some("tool-1") && tool_name == "read_file")
+        })
         .expect("tool_call event should exist");
     let tool_result_idx = payloads
         .iter()
-        .position(|p| matches!(p, SessionEventPayload::ToolResult { tool_name, .. } if tool_name == "read_file"))
+        .position(|p| {
+            matches!(p, SessionEventPayload::ToolResult { call_id, tool_name, .. } if call_id.as_deref() == Some("tool-1") && tool_name.is_none())
+        })
         .expect("tool_result event should exist");
 
     assert!(
