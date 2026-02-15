@@ -14,6 +14,11 @@ pub struct ClaudeCli {
     pub path: PathBuf,
 }
 
+pub struct SpawnedSession {
+    pub child: tokio::process::Child,
+    pub seq: Arc<AtomicU64>,
+}
+
 impl ClaudeCli {
     /// Find Claude CLI in PATH or common locations
     pub fn find() -> Option<Self> {
@@ -114,12 +119,14 @@ impl ClaudeCli {
         working_dir: &str,
         session_id: &str,
         tx: mpsc::Sender<SessionEvent>,
-    ) -> Result<tokio::process::Child, String> {
+    ) -> Result<SpawnedSession, String> {
         self.ensure_compatible().await?;
 
         let mut child = Command::new(&self.path)
             .arg("-p")
             .arg(prompt)
+            .arg("--output-format")
+            .arg("stream-json")
             .current_dir(working_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -179,7 +186,7 @@ impl ClaudeCli {
             }
         });
 
-        Ok(child)
+        Ok(SpawnedSession { child, seq })
     }
 
     pub async fn ensure_compatible(&self) -> Result<(), String> {
@@ -318,35 +325,166 @@ fn parse_json_event(session_id: &str, seq: u64, value: Value) -> Option<SessionE
     let data = value.get("data").cloned().unwrap_or(Value::Null);
 
     let payload = match event_type {
-        "message" => {
-            SessionEventPayload::Message { content: data.get("content")?.as_str()?.to_string() }
-        }
+        "message" => SessionEventPayload::Message {
+            content: data.get("content")?.as_str()?.to_string(),
+        },
+        "thinking" => SessionEventPayload::Thinking {
+            content: data.get("content")?.as_str()?.to_string(),
+        },
         "tool_call" => {
             let tool_name = data
                 .get("tool_name")
                 .and_then(Value::as_str)
                 .or_else(|| data.get("name").and_then(Value::as_str))?
                 .to_string();
+            let call_id = data
+                .get("call_id")
+                .and_then(Value::as_str)
+                .or_else(|| data.get("tool_use_id").and_then(Value::as_str))
+                .map(ToString::to_string);
             let args = data
                 .get("args")
                 .cloned()
                 .or_else(|| data.get("arguments").cloned())
+                .or_else(|| data.get("input").cloned())
                 .unwrap_or(Value::Null);
-            SessionEventPayload::ToolCall { tool_name, args }
+            SessionEventPayload::ToolCall { call_id, tool_name, args }
         }
         "tool_result" => {
-            let tool_name = data.get("tool_name")?.as_str()?.to_string();
-            let result = data.get("result").cloned().unwrap_or(Value::Null);
-            SessionEventPayload::ToolResult { tool_name, result }
+            let call_id = data
+                .get("call_id")
+                .and_then(Value::as_str)
+                .or_else(|| data.get("tool_use_id").and_then(Value::as_str))
+                .map(ToString::to_string);
+            let tool_name = data
+                .get("tool_name")
+                .and_then(Value::as_str)
+                .or_else(|| data.get("name").and_then(Value::as_str))
+                .map(ToString::to_string);
+            let result = data.get("result").cloned().unwrap_or_else(|| {
+                data.get("content").cloned().unwrap_or(Value::Null)
+            });
+            SessionEventPayload::ToolResult { call_id, tool_name, result }
         }
         "status" => SessionEventPayload::Status {
-            status: data.get("status").and_then(Value::as_str).unwrap_or("unknown").to_string(),
+            status: canonical_status(
+                data.get("status").and_then(Value::as_str).unwrap_or("unknown"),
+            ),
         },
         "error" => SessionEventPayload::Error {
             message: data.get("message").and_then(Value::as_str).unwrap_or("unknown").to_string(),
         },
+        "assistant" | "user" | "result" | "system" => {
+            let payload = parse_stream_json_event(event_type, &value)?;
+            return Some(build_event(session_id, seq, payload));
+        }
         _ => return None,
     };
 
     Some(build_event(session_id, seq, payload))
+}
+
+fn parse_stream_json_event(event_type: &str, value: &Value) -> Option<SessionEventPayload> {
+    match event_type {
+        "assistant" => {
+            let message = value.get("message")?;
+            let content = message.get("content")?.as_array()?;
+            for block in content {
+                if let Some(block_type) = block.get("type").and_then(Value::as_str) {
+                    match block_type {
+                        "text" => {
+                            if let Some(text) = block.get("text" ).and_then(Value::as_str) {
+                                if !text.is_empty() {
+                                    return Some(SessionEventPayload::Message {
+                                        content: text.to_string(),
+                                    });
+                                }
+                            }
+                        }
+                        "thinking" => {
+                            if let Some(thinking) =
+                                block.get("thinking").and_then(Value::as_str).or_else(|| {
+                                    block.get("text").and_then(Value::as_str)
+                                })
+                            {
+                                if !thinking.is_empty() {
+                                    return Some(SessionEventPayload::Thinking {
+                                        content: thinking.to_string(),
+                                    });
+                                }
+                            }
+                        }
+                        "tool_use" => {
+                            let tool_name = block
+                                .get("name")
+                                .and_then(Value::as_str)
+                                .unwrap_or("unknown")
+                                .to_string();
+                            let call_id = block
+                                .get("id")
+                                .and_then(Value::as_str)
+                                .map(ToString::to_string);
+                            let args = block.get("input").cloned().unwrap_or(Value::Null);
+                            return Some(SessionEventPayload::ToolCall { call_id, tool_name, args });
+                        }
+                        _ => continue,
+                    }
+                }
+            }
+            None
+        }
+        "user" => {
+            let message = value.get("message")?;
+            let content = message.get("content")?.as_array()?;
+            for block in content {
+                if block.get("type").and_then(Value::as_str) == Some("tool_result") {
+                    let call_id = block
+                        .get("tool_use_id")
+                        .and_then(Value::as_str)
+                        .map(ToString::to_string);
+                    let result = block.get("content").cloned().unwrap_or(Value::Null);
+                    return Some(SessionEventPayload::ToolResult {
+                        call_id,
+                        tool_name: None,
+                        result,
+                    });
+                }
+            }
+            None
+        }
+        "result" => {
+            let is_error = value.get("is_error").and_then(Value::as_bool).unwrap_or(false);
+            let subtype = value
+                .get("subtype")
+                .and_then(Value::as_str)
+                .unwrap_or(if is_error { "failed" } else { "completed" });
+            Some(SessionEventPayload::Status {
+                status: if is_error {
+                    "failed".to_string()
+                } else {
+                    canonical_status(subtype)
+                },
+            })
+        }
+        "system" => {
+            let subtype = value.get("subtype").and_then(Value::as_str).unwrap_or("running");
+            if subtype == "init" {
+                Some(SessionEventPayload::Status {
+                    status: "running".to_string(),
+                })
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn canonical_status(status: &str) -> String {
+    match status {
+        "success" => "completed".to_string(),
+        "done" | "complete" => "completed".to_string(),
+        "error" => "failed".to_string(),
+        other => other.to_string(),
+    }
 }

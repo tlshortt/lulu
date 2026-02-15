@@ -14,8 +14,17 @@ pub struct SessionEvent {
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum SessionEventPayload {
     Message { content: String },
-    ToolCall { tool_name: String, args: Value },
-    ToolResult { tool_name: String, result: Value },
+    Thinking { content: String },
+    ToolCall {
+        call_id: Option<String>,
+        tool_name: String,
+        args: Value,
+    },
+    ToolResult {
+        call_id: Option<String>,
+        tool_name: Option<String>,
+        result: Value,
+    },
     Status { status: String },
     Error { message: String },
 }
