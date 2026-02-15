@@ -1,6 +1,6 @@
 <script lang="ts">
   import SessionOutput from "$lib/components/SessionOutput.svelte";
-  import { selectedSessionId, sessions } from "$lib/stores/sessions";
+  import { activeSessionId, sessions } from "$lib/stores/sessions";
 </script>
 
 <section class="flex h-full flex-1 flex-col bg-background text-foreground">
@@ -24,7 +24,22 @@
         Press <span class="text-foreground">⌘ + N</span> to start a new session
       </div>
     </div>
+  {:else if !$activeSessionId}
+    <div
+      class="flex h-full flex-col items-center justify-center gap-3 px-8 text-center"
+    >
+      <div
+        class="text-sm font-semibold uppercase tracking-[0.2em] text-foreground/40"
+      >
+        Sessions
+      </div>
+      <div class="text-xl font-semibold">Pick a session to view output</div>
+      <p class="max-w-md text-sm text-foreground/60">
+        Select a session from the sidebar to inspect events for that session
+        only.
+      </p>
+    </div>
   {:else}
-    <SessionOutput sessionId={$selectedSessionId} />
+    <SessionOutput />
   {/if}
 </section>
