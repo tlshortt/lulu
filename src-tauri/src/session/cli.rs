@@ -1,0 +1,96 @@
+use std::path::PathBuf;
+use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
+use which::which;
+
+pub struct ClaudeCli {
+    pub path: PathBuf,
+}
+
+impl ClaudeCli {
+    /// Find Claude CLI in PATH or common locations
+    pub fn find() -> Option<Self> {
+        if let Ok(path) = which("claude") {
+            return Some(ClaudeCli { path });
+        }
+
+        let home = std::env::var("HOME").ok()?;
+        let locations = [
+            format!("{}/.claude/bin/claude", home),
+            format!("{}/.local/bin/claude", home),
+            "/usr/local/bin/claude".to_string(),
+        ];
+
+        for location in locations {
+            let path = PathBuf::from(&location);
+            if path.exists() {
+                return Some(ClaudeCli { path });
+            }
+        }
+
+        None
+    }
+
+    /// Spawn Claude CLI with prompt, streaming output to callback
+    pub async fn spawn<F>(
+        &self,
+        prompt: &str,
+        working_dir: &str,
+        mut on_output: F,
+    ) -> Result<(), String>
+    where
+        F: FnMut(String) + Send + 'static,
+    {
+        let mut child = Command::new(&self.path)
+            .arg("-p")
+            .arg(prompt)
+            .current_dir(working_dir)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .stdin(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn: {}", e))?;
+
+        let stdout = child.stdout.take().expect("stdout not captured");
+        let stderr = child.stderr.take().expect("stderr not captured");
+
+        let stdout_reader = BufReader::new(stdout);
+        let mut stdout_lines = stdout_reader.lines();
+
+        let stderr_reader = BufReader::new(stderr);
+        let mut stderr_lines = stderr_reader.lines();
+
+        loop {
+            tokio::select! {
+                line = stdout_lines.next_line() => {
+                    match line {
+                        Ok(Some(line)) => on_output(format!("[stdout] {}", line)),
+                        Ok(None) => {},
+                        Err(e) => on_output(format!("[stdout error] {}", e)),
+                    }
+                }
+                line = stderr_lines.next_line() => {
+                    match line {
+                        Ok(Some(line)) => on_output(format!("[stderr] {}", line)),
+                        Ok(None) => {},
+                        Err(e) => on_output(format!("[stderr error] {}", e)),
+                    }
+                }
+                status = child.wait() => {
+                    match status {
+                        Ok(status) => {
+                            on_output(format!("[exited] {}", status));
+                        }
+                        Err(e) => {
+                            on_output(format!("[wait error] {}", e));
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
