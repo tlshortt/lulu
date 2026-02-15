@@ -35,27 +35,18 @@ pub async fn spawn_session(
         updated_at: now,
     };
 
-    db.create_session(&session)
-        .map_err(|e| format!("Failed to create session: {}", e))?;
+    db.create_session(&session).map_err(|e| format!("Failed to create session: {}", e))?;
 
-    app.emit("session-started", &session_id)
-        .map_err(|e| e.to_string())?;
+    app.emit("session-started", &session_id).map_err(|e| e.to_string())?;
 
     let session_id_clone = session_id.clone();
     let app_clone = app.clone();
     let output_emitter = Arc::new(move |line: String| {
-        let _ = app_clone.emit(
-            "session-output",
-            SessionOutput {
-                session_id: session_id_clone.clone(),
-                line,
-            },
-        );
+        let _ = app_clone
+            .emit("session-output", SessionOutput { session_id: session_id_clone.clone(), line });
     });
 
-    let child = cli
-        .spawn_with_output(&prompt, &working_dir, output_emitter)
-        .await?;
+    let child = cli.spawn_with_output(&prompt, &working_dir, output_emitter).await?;
 
     let child_handle = Arc::new(Mutex::new(child));
     let killed = Arc::new(Mutex::new(false));
@@ -111,14 +102,12 @@ pub async fn spawn_session(
 
 #[tauri::command]
 pub async fn list_sessions(db: State<'_, Database>) -> Result<Vec<Session>, String> {
-    db.list_sessions()
-        .map_err(|e| format!("Failed to list sessions: {}", e))
+    db.list_sessions().map_err(|e| format!("Failed to list sessions: {}", e))
 }
 
 #[tauri::command]
 pub async fn get_session(db: State<'_, Database>, id: String) -> Result<Option<Session>, String> {
-    db.get_session(&id)
-        .map_err(|e| format!("Failed to get session: {}", e))
+    db.get_session(&id).map_err(|e| format!("Failed to get session: {}", e))
 }
 
 #[tauri::command]
@@ -127,8 +116,7 @@ pub async fn kill_session(
     db: State<'_, Database>,
     id: String,
 ) -> Result<(), String> {
-    db.update_session_status(&id, "killed")
-        .map_err(|e| e.to_string())?;
+    db.update_session_status(&id, "killed").map_err(|e| e.to_string())?;
 
     let manager = manager.lock().await;
     let sessions = manager.sessions.lock().await;

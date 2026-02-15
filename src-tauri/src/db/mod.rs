@@ -41,9 +41,7 @@ pub fn init_database(db_path: &Path) -> Result<Database> {
         CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);",
     )?;
 
-    Ok(Database {
-        conn: Mutex::new(conn),
-    })
+    Ok(Database { conn: Mutex::new(conn) })
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -60,5 +58,22 @@ impl serde::Serialize for DbError {
         S: serde::Serializer,
     {
         serializer.serialize_str(&self.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn init_database_creates_file() -> Result<()> {
+        let dir = tempdir().expect("failed to create temp dir");
+        let db_path = dir.path().join("lulu-test.db");
+
+        let _database = init_database(&db_path)?;
+
+        assert!(db_path.exists(), "database file should be created");
+        Ok(())
     }
 }

@@ -15,9 +15,7 @@ pub struct SessionHandle {
 
 impl SessionManager {
     pub fn new() -> Self {
-        SessionManager {
-            sessions: Arc::new(Mutex::new(HashMap::new())),
-        }
+        SessionManager { sessions: Arc::new(Mutex::new(HashMap::new())) }
     }
 
     /// Kill all running sessions on app exit
