@@ -73,7 +73,20 @@ Each task was committed atomically:
 
 ## Deviations from Plan
 
-None - plan executed exactly as written.
+### Auto-fixed Issues
+
+**1. [Rule 3 - Blocking] STATE.md automation parser mismatch blocked position/session updates**
+- **Found during:** Post-task state update
+- **Issue:** `state advance-plan`, `state update-progress`, and `state record-session` reported missing parseable STATE fields despite valid markdown sections.
+- **Fix:** Applied required position/session continuity updates manually in `.planning/STATE.md` after running available successful state tooling commands.
+- **Files modified:** `.planning/STATE.md`
+- **Verification:** STATE now reflects Phase 3 Plan 4 completion and updated session continuity fields.
+- **Committed in:** `3f3c309` (metadata docs commit)
+
+---
+
+**Total deviations:** 1 auto-fixed (1 blocking)
+**Impact on plan:** No scope creep; manual state patch replaced failed automation update calls.
 
 ## Issues Encountered
 None.
