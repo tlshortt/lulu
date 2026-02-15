@@ -130,7 +130,85 @@ describe("Sidebar dashboard interactions", () => {
 
     render(Sidebar);
 
-    expect(screen.getByText("5s")).toBeTruthy();
+    expect(screen.getByText("5s").className).toContain("shrink-0");
     expect(screen.getByText("Command exited with status 2")).toBeTruthy();
+  });
+
+  it("does not render progress percentages or running subtext", async () => {
+    (
+      sessionStores.dashboardRows as unknown as {
+        set: (value: unknown) => void;
+      }
+    ).set([
+      {
+        id: "running-1",
+        name: "Live run",
+        status: "Running",
+        recentActivity: "8s",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    sessionStores.sessions.set([
+      {
+        id: "running-1",
+        name: "Live run",
+        status: "running",
+        working_dir: "/tmp/project",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+
+    render(Sidebar);
+
+    expect(screen.queryByText("42%")).toBeNull();
+    expect(screen.queryByText("tool_call")).toBeNull();
+  });
+
+  it("stops running pulse when row reaches terminal state", async () => {
+    (
+      sessionStores.dashboardRows as unknown as {
+        set: (value: unknown) => void;
+      }
+    ).set([
+      {
+        id: "pulse-1",
+        name: "Pulse row",
+        status: "Running",
+        recentActivity: "1s",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    sessionStores.sessions.set([
+      {
+        id: "pulse-1",
+        name: "Pulse row",
+        status: "running",
+        working_dir: "/tmp/project",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+
+    const { container } = render(Sidebar);
+    expect(container.querySelector(".animate-pulse")).toBeTruthy();
+
+    (
+      sessionStores.dashboardRows as unknown as {
+        set: (value: unknown) => void;
+      }
+    ).set([
+      {
+        id: "pulse-1",
+        name: "Pulse row",
+        status: "Completed",
+        recentActivity: "2s",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+
+    await waitFor(() => {
+      expect(container.querySelector(".animate-pulse")).toBeNull();
+    });
   });
 });

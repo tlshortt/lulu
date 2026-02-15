@@ -164,4 +164,31 @@ describe("sessions dashboard projection", () => {
     expect(row?.recentActivity).toBe("1m");
     expect(row?.failureReason).toBe("First line second line");
   });
+
+  it("stops running status immediately on terminal update", () => {
+    sessions.set([
+      {
+        id: "pulse-1",
+        name: "Pulse",
+        status: "running",
+        working_dir: "/tmp/pulse",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:10:00Z",
+      },
+    ]);
+
+    expect(readDashboardRows()[0]?.status).toBe("Running");
+
+    routeSessionEvent({
+      type: "status",
+      data: {
+        session_id: "pulse-1",
+        seq: 2,
+        timestamp: "2026-01-01T00:10:01Z",
+        status: "completed",
+      },
+    });
+
+    expect(readDashboardRows()[0]?.status).toBe("Completed");
+  });
 });
