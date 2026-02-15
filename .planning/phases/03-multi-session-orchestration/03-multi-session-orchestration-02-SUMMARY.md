@@ -66,6 +66,8 @@ Each task was committed atomically:
 1. **Task 1: Introduce SessionSupervisor for independent runtime domains** - `61a2f20` (feat)
 2. **Task 2: Add integration coverage for parallel execution and crash isolation** - `8966334` (test)
 
+**Plan metadata:** `6ea78bf` (docs)
+
 ## Files Created/Modified
 - `src-tauri/src/session/supervisor.rs` - New supervisor runtime registry with per-session kill/terminal guards.
 - `src-tauri/src/commands/session.rs` - Updated lifecycle orchestration to use supervisor-guarded finalization.
