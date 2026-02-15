@@ -1,12 +1,12 @@
-use crate::db::{Database, Session, SessionMessage};
-use crate::session::projection::normalize_failure_reason;
+use crate::db::{Database, Session, SessionDashboardRow, SessionMessage};
+use crate::session::projection::{normalize_failure_reason, project_dashboard_row, DashboardSessionProjection};
 use crate::session::{ClaudeCli, SessionManager, SessionSupervisor, WorktreeService};
 use crate::session::{SessionEvent, SessionEventPayload};
 use serde_json::json;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::mpsc;
@@ -53,6 +53,10 @@ fn is_terminal_status(status: &str) -> bool {
     TERMINAL_STATUSES.contains(&status)
 }
 
+fn project_dashboard_rows(rows: Vec<SessionDashboardRow>) -> Vec<DashboardSessionProjection> {
+    rows.into_iter().map(project_dashboard_row).collect()
+}
+
 async fn session_supervisor(manager: &Arc<Mutex<SessionManager>>) -> Arc<SessionSupervisor> {
     let manager = manager.lock().await;
     manager.supervisor.clone()
@@ -68,51 +72,37 @@ async fn finalize_session_once(
     failure_message: Option<String>,
 ) {
     let supervisor = session_supervisor(manager).await;
-    if !supervisor.begin_terminal_transition(session_id).await {
-        return;
-    }
-
-    let final_status = if status == "complete" || status == "done" {
-        "completed"
-    } else {
-        status
+    let db = app.state::<Database>();
+    let transition = match supervisor
+        .finalize_terminal_transition_and_emit(
+            app,
+            db.inner(),
+            session_id,
+            status,
+            seq.as_ref(),
+            failure_message,
+            emit_structured_status,
+        )
+        .await
+    {
+        Ok(result) => result,
+        Err(_) => None,
     };
 
-    let db = app.state::<Database>();
-    if is_terminal_status(final_status) {
-        let _ = db.transition_session_terminal(session_id, final_status);
-    } else {
-        let _ = db.update_session_status(session_id, final_status);
-    }
-
-    let _ = db.update_last_activity(session_id, &chrono::Utc::now().to_rfc3339());
-    if final_status == "failed" || final_status == "killed" {
-        let _ = db.update_failure_reason(
-            session_id,
-            normalize_failure_reason(failure_message.as_deref()).as_deref(),
-        );
-    }
-
-    if emit_structured_status {
-        let status_event = json!({
-            "type": "status",
-            "data": {
-                "session_id": session_id,
-                "seq": seq.fetch_add(1, Ordering::SeqCst),
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-                "status": final_status,
-                "message": failure_message
-            }
-        });
-        let _ = app.emit("session-event", status_event);
-    }
+    let Some(transition) = transition else {
+        return;
+    };
+    let final_status = transition.final_status;
+    let failure_message = transition.failure_message;
 
     if final_status == "completed" {
         let _ = app.emit("session-complete", session_id);
     }
 
     if final_status == "failed" {
-        let message = failure_message.unwrap_or_else(|| "Session failed".to_string());
+        let message = failure_message
+            .clone()
+            .unwrap_or_else(|| "Session failed".to_string());
         let _ = app.emit("session-error", (session_id, message));
     }
 
@@ -463,6 +453,15 @@ pub async fn list_sessions(db: State<'_, Database>) -> Result<Vec<Session>, Stri
 }
 
 #[tauri::command]
+pub async fn list_dashboard_sessions(
+    db: State<'_, Database>,
+) -> Result<Vec<DashboardSessionProjection>, String> {
+    db.list_dashboard_sessions()
+        .map(project_dashboard_rows)
+        .map_err(|e| format!("Failed to list dashboard sessions: {}", e))
+}
+
+#[tauri::command]
 pub async fn get_session(db: State<'_, Database>, id: String) -> Result<Option<Session>, String> {
     db.get_session(&id).map_err(|e| format!("Failed to get session: {}", e))
 }
@@ -494,11 +493,8 @@ pub async fn list_session_messages(
 #[tauri::command]
 pub async fn kill_session(
     manager: State<'_, Arc<Mutex<SessionManager>>>,
-    db: State<'_, Database>,
     id: String,
 ) -> Result<(), String> {
-    db.update_session_status(&id, "killed").map_err(|e| e.to_string())?;
-
     let supervisor = session_supervisor(manager.inner()).await;
     let _ = supervisor.kill_session(&id).await;
 
@@ -540,7 +536,9 @@ pub async fn delete_session(
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_working_dir;
+    use super::{project_dashboard_rows, resolve_working_dir};
+    use crate::db::SessionDashboardRow;
+    use crate::session::projection::DASHBOARD_STATUS_FAILED;
 
     #[test]
     fn resolve_working_dir_expands_home_alias() {
@@ -556,5 +554,22 @@ mod tests {
     fn resolve_working_dir_trims_non_tilde_paths() {
         let resolved = resolve_working_dir("  /tmp/project  ").expect("path should resolve");
         assert_eq!(resolved, "/tmp/project");
+    }
+
+    #[test]
+    fn list_dashboard_projection_uses_locked_projection_boundary() {
+        let rows = vec![SessionDashboardRow {
+            id: "session-1".to_string(),
+            name: "session".to_string(),
+            status: "killed".to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            last_activity_at: None,
+            failure_reason: Some("  runtime\nerror ".to_string()),
+            worktree_path: None,
+        }];
+
+        let projected = project_dashboard_rows(rows);
+        assert_eq!(projected[0].status, DASHBOARD_STATUS_FAILED);
+        assert_eq!(projected[0].failure_reason.as_deref(), Some("runtime error"));
     }
 }

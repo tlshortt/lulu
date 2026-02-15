@@ -28,6 +28,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::spawn_session,
             commands::list_sessions,
+            commands::list_dashboard_sessions,
             commands::get_session,
             commands::rename_session,
             commands::list_session_messages,
