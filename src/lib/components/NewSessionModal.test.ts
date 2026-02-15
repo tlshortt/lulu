@@ -85,4 +85,48 @@ describe("NewSessionModal", () => {
 
     expect(spawnSessionMock).toHaveBeenCalledTimes(1);
   });
+
+  it("does not close when pressing space inside an input", async () => {
+    const onClose = vi.fn();
+
+    render(NewSessionModal, {
+      props: { open: true, onClose },
+    });
+
+    const nameInput = screen.getByLabelText("Session name");
+    await fireEvent.keyDown(nameInput, { key: " ", code: "Space" });
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("submits when pressing Enter in an input field", async () => {
+    const onClose = vi.fn();
+    spawnSessionMock.mockResolvedValue("session-2");
+
+    render(NewSessionModal, {
+      props: { open: true, onClose },
+    });
+
+    await fireEvent.input(screen.getByLabelText("Session name"), {
+      target: { value: " Enter Submit " },
+    });
+    await fireEvent.input(screen.getByLabelText("Prompt"), {
+      target: { value: " Run from enter " },
+    });
+    const workingDirInput = screen.getByLabelText("Working directory");
+    await fireEvent.input(workingDirInput, {
+      target: { value: " /tmp/enter " },
+    });
+
+    await fireEvent.keyDown(workingDirInput, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(spawnSessionMock).toHaveBeenCalledWith(
+        "Enter Submit",
+        "Run from enter",
+        "/tmp/enter",
+      );
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
 });

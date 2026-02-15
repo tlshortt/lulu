@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import SessionOutput from "./SessionOutput.svelte";
 import {
   activeSessionId,
+  sessionDebug,
   sessionEvents,
   sessions,
   showThinking,
@@ -31,6 +32,7 @@ describe("SessionOutput", () => {
     activeSessionId.set(null);
     sessions.set([]);
     sessionEvents.set({});
+    sessionDebug.set({});
     showThinking.set(false);
   });
 
@@ -120,5 +122,68 @@ describe("SessionOutput", () => {
 
     expect(screen.getByText("hidden by default")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Hide thinking" })).toBeTruthy();
+  });
+
+  it("shows a thinking hint when only hidden thinking events exist", () => {
+    setSessionState([
+      {
+        type: "thinking",
+        data: {
+          session_id: sessionId,
+          seq: 1,
+          timestamp: "2026-01-01T00:00:00Z",
+          content: "internal reasoning",
+        },
+      },
+    ]);
+
+    render(SessionOutput);
+
+    expect(
+      screen.getByText(
+        'No visible output yet. Click "Show thinking" to view reasoning.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows waiting text while running with no events", () => {
+    setSessionState([]);
+
+    render(SessionOutput);
+
+    expect(screen.getByText("Waiting for first output...")).toBeTruthy();
+    expect(screen.getByText("Debug: spawn args + stderr tail")).toBeTruthy();
+  });
+
+  it("renders debug spawn args and stderr tail when present", async () => {
+    setSessionState([]);
+    sessionDebug.set({
+      [sessionId]: {
+        cliPath: "/Users/timothyshortt/.local/bin/claude",
+        args: [
+          "-p",
+          "<prompt redacted>",
+          "--verbose",
+          "--output-format",
+          "stream-json",
+        ],
+        workingDir: "/tmp/worktree",
+        stderrTail: [
+          "Error: sample stderr line 1",
+          "Error: sample stderr line 2",
+        ],
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    render(SessionOutput);
+
+    await fireEvent.click(screen.getByText("Debug: spawn args + stderr tail"));
+
+    expect(
+      screen.getByText("/Users/timothyshortt/.local/bin/claude"),
+    ).toBeTruthy();
+    expect(screen.getByText(/--output-format stream-json/)).toBeTruthy();
+    expect(screen.getByText(/sample stderr line 1/)).toBeTruthy();
   });
 });

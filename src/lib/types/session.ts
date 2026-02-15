@@ -49,3 +49,13 @@ export type SessionEvent =
   | { type: "thinking"; data: ThinkingEventData }
   | { type: "status"; data: StatusEventData }
   | { type: "error"; data: ErrorEventData };
+
+export interface SessionDebugEvent {
+  session_id: string;
+  kind: "spawn" | "stderr";
+  timestamp: string;
+  cli_path?: string;
+  args?: string[];
+  working_dir?: string;
+  message?: string;
+}

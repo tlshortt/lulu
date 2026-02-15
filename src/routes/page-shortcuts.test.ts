@@ -23,6 +23,12 @@ vi.mock("@tauri-apps/api/event", () => ({
 describe("page keyboard shortcuts", () => {
   beforeEach(() => {
     invokeMock.mockClear();
+    window.localStorage.clear();
+    Object.defineProperty(window, "innerWidth", {
+      value: 1200,
+      writable: true,
+      configurable: true,
+    });
   });
 
   it("opens New Session modal on Cmd+N", async () => {
@@ -47,5 +53,34 @@ describe("page keyboard shortcuts", () => {
     expect(screen.queryByRole("dialog", { name: "New Session" })).toBeNull();
 
     input.remove();
+  });
+
+  it("loads and clamps sidebar width from storage", async () => {
+    window.localStorage.setItem("lulu:sidebar-width", "600");
+
+    render(Page);
+
+    const separator = await screen.findByRole("separator", {
+      name: "Resize sidebar",
+    });
+    const sidebarContainer = separator.parentElement as HTMLElement;
+
+    expect(sidebarContainer.style.width).toBe("480px");
+  });
+
+  it("resizes sidebar by drag and persists width", async () => {
+    render(Page);
+
+    const separator = await screen.findByRole("separator", {
+      name: "Resize sidebar",
+    });
+    const sidebarContainer = separator.parentElement as HTMLElement;
+
+    await fireEvent.pointerDown(separator, { clientX: 280 });
+    await fireEvent.pointerMove(window, { clientX: 360 });
+    await fireEvent.pointerUp(window);
+
+    expect(sidebarContainer.style.width).toBe("360px");
+    expect(window.localStorage.getItem("lulu:sidebar-width")).toBe("360");
   });
 });

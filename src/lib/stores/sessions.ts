@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { writable } from "svelte/store";
-import type { SessionEvent } from "$lib/types/session";
+import { get, writable } from "svelte/store";
+import type { SessionDebugEvent, SessionEvent } from "$lib/types/session";
 
 export interface Session {
   id: string;
@@ -16,11 +16,29 @@ export const sessions = writable<Session[]>([]);
 export const activeSessionId = writable<string | null>(null);
 export const selectedSessionId = activeSessionId;
 export const sessionEvents = writable<Record<string, SessionEvent[]>>({});
+export interface SessionDebugState {
+  cliPath?: string;
+  args?: string[];
+  workingDir?: string;
+  stderrTail: string[];
+  updatedAt: string;
+}
+
+export const sessionDebug = writable<Record<string, SessionDebugState>>({});
 
 type MessageBuffers = Record<string, string>;
+interface StoredSessionMessage {
+  id: string;
+  session_id: string;
+  role: string;
+  content: string;
+  timestamp: string;
+}
 
 const messageBuffers: MessageBuffers = {};
+const loadedSessionHistory = new Set<string>();
 let listenerInitialized = false;
+let listenerInitializing = false;
 let sequenceCounter = 0;
 const canonicalSessionEventIds = new Set<string>();
 const TERMINAL_STATUSES = new Set(["completed", "failed", "killed"]);
@@ -95,6 +113,8 @@ const normalizeStatus = (status: string) => {
 
 const isTerminalStatus = (status: string) =>
   TERMINAL_STATUSES.has(normalizeStatus(status));
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const updateSessionStatus = (
   sessionId: string,
@@ -247,15 +267,158 @@ export function resetSessionEventStateForTests() {
     delete messageBuffers[sessionId];
   });
   canonicalSessionEventIds.clear();
+  loadedSessionHistory.clear();
   sessionEvents.set({});
+  sessionDebug.set({});
   sequenceCounter = 0;
   listenerInitialized = false;
+  listenerInitializing = false;
+}
+
+function routeSessionDebugEvent(event: SessionDebugEvent) {
+  sessionDebug.update((items) => {
+    const current =
+      items[event.session_id] ??
+      ({
+        stderrTail: [],
+        updatedAt: event.timestamp,
+      } satisfies SessionDebugState);
+
+    if (event.kind === "spawn") {
+      return {
+        ...items,
+        [event.session_id]: {
+          ...current,
+          cliPath: event.cli_path,
+          args: event.args,
+          workingDir: event.working_dir,
+          updatedAt: event.timestamp,
+        },
+      };
+    }
+
+    if (event.kind === "stderr") {
+      const stderrTail = [...current.stderrTail, event.message ?? ""].slice(
+        -20,
+      );
+      return {
+        ...items,
+        [event.session_id]: {
+          ...current,
+          stderrTail,
+          updatedAt: event.timestamp,
+        },
+      };
+    }
+
+    return items;
+  });
 }
 
 export async function loadSessions() {
   const data = await invoke<Session[]>("list_sessions");
   sessions.set(data);
   activeSessionId.update((current) => current ?? data[0]?.id ?? null);
+
+  for (const session of data) {
+    if (normalizeStatus(session.status) !== "running") {
+      void loadSessionHistory(session.id);
+    }
+  }
+}
+
+export async function loadSessionHistory(sessionId: string) {
+  if (loadedSessionHistory.has(sessionId)) {
+    return;
+  }
+
+  const messages = await invoke<StoredSessionMessage[]>(
+    "list_session_messages",
+    {
+      id: sessionId,
+    },
+  );
+
+  loadedSessionHistory.add(sessionId);
+
+  if (messages.length === 0) {
+    return;
+  }
+
+  sessionEvents.update((items) => {
+    const existing = items[sessionId] ?? [];
+    if (existing.length > 0) {
+      return items;
+    }
+
+    const historyEvents: SessionEvent[] = messages.map((message, index) => ({
+      type: "message",
+      data: {
+        session_id: sessionId,
+        seq: index + 1,
+        timestamp: message.timestamp,
+        content: message.content,
+        complete: true,
+      },
+    }));
+
+    return {
+      ...items,
+      [sessionId]: historyEvents,
+    };
+  });
+}
+
+export async function loadSessionsWithRetry(attempts = 5, delayMs = 150) {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await loadSessions();
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) {
+        await delay(delayMs);
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+function removeSessionLocal(sessionId: string) {
+  delete messageBuffers[sessionId];
+  canonicalSessionEventIds.delete(sessionId);
+  loadedSessionHistory.delete(sessionId);
+
+  sessions.update((items) => items.filter((item) => item.id !== sessionId));
+  sessionEvents.update((items) => {
+    if (!(sessionId in items)) {
+      return items;
+    }
+
+    const next = { ...items };
+    delete next[sessionId];
+    return next;
+  });
+  sessionDebug.update((items) => {
+    if (!(sessionId in items)) {
+      return items;
+    }
+
+    const next = { ...items };
+    delete next[sessionId];
+    return next;
+  });
+
+  activeSessionId.update((current) => {
+    if (current !== sessionId) {
+      return current;
+    }
+
+    return get(sessions)[0]?.id ?? null;
+  });
 }
 
 export async function spawnSession(
@@ -263,6 +426,8 @@ export async function spawnSession(
   prompt: string,
   workingDir: string,
 ) {
+  await initSessionListeners();
+
   const id = await invoke<string>("spawn_session", {
     name,
     prompt,
@@ -274,98 +439,137 @@ export async function spawnSession(
   return id;
 }
 
+export async function removeSession(sessionId: string, status: string) {
+  if (normalizeStatus(status) === "running") {
+    await invoke("kill_session", { id: sessionId });
+  }
+
+  await invoke("delete_session", { id: sessionId });
+  removeSessionLocal(sessionId);
+}
+
+export async function renameSession(sessionId: string, name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new Error("Session name cannot be empty.");
+  }
+
+  await invoke("rename_session", { id: sessionId, name: trimmed });
+  sessions.update((items) =>
+    items.map((item) =>
+      item.id === sessionId
+        ? {
+            ...item,
+            name: trimmed,
+            updated_at: new Date().toISOString(),
+          }
+        : item,
+    ),
+  );
+}
+
 export async function initSessionListeners() {
-  if (listenerInitialized) {
+  if (listenerInitialized || listenerInitializing) {
     return;
   }
 
-  listenerInitialized = true;
+  listenerInitializing = true;
 
-  await listen<SessionEvent>("session-event", (event) => {
-    routeSessionEvent(event.payload);
-  });
+  try {
+    await listen<SessionEvent>("session-event", (event) => {
+      routeSessionEvent(event.payload);
+    });
 
-  await listen<{ session_id: string; line: string }>(
-    "session-output",
-    (event) => {
-      const { session_id: sessionId, line } = event.payload;
+    await listen<SessionDebugEvent>("session-debug", (event) => {
+      routeSessionDebugEvent(event.payload);
+    });
+
+    await listen<{ session_id: string; line: string }>(
+      "session-output",
+      (event) => {
+        const { session_id: sessionId, line } = event.payload;
+        if (canonicalSessionEventIds.has(sessionId)) {
+          return;
+        }
+        appendMessage(sessionId, `${line}\n`, true);
+      },
+    );
+
+    await listen<string>("session-started", (event) => {
+      const sessionId = event.payload;
       if (canonicalSessionEventIds.has(sessionId)) {
         return;
       }
-      appendMessage(sessionId, `${line}\n`, true);
-    },
-  );
 
-  await listen<string>("session-started", (event) => {
-    const sessionId = event.payload;
-    if (canonicalSessionEventIds.has(sessionId)) {
-      return;
-    }
-
-    const timestamp = createTimestamp();
-    addEvent(sessionId, {
-      type: "status",
-      data: {
-        session_id: sessionId,
-        seq: nextSeq(),
-        timestamp,
-        status: "running",
-      },
+      const timestamp = createTimestamp();
+      addEvent(sessionId, {
+        type: "status",
+        data: {
+          session_id: sessionId,
+          seq: nextSeq(),
+          timestamp,
+          status: "running",
+        },
+      });
+      updateSessionStatus(sessionId, "running", timestamp);
     });
-    updateSessionStatus(sessionId, "running", timestamp);
-  });
 
-  await listen<string>("session-complete", async (event) => {
-    const sessionId = event.payload;
-    if (canonicalSessionEventIds.has(sessionId)) {
+    await listen<string>("session-complete", async (event) => {
+      const sessionId = event.payload;
+      if (canonicalSessionEventIds.has(sessionId)) {
+        await loadSessions();
+        return;
+      }
+
+      flushMessageBuffer(sessionId);
+      const timestamp = createTimestamp();
+      addEvent(sessionId, {
+        type: "status",
+        data: {
+          session_id: sessionId,
+          seq: nextSeq(),
+          timestamp,
+          status: "completed",
+        },
+      });
+      updateSessionStatus(sessionId, "completed", timestamp);
       await loadSessions();
-      return;
-    }
-
-    flushMessageBuffer(sessionId);
-    const timestamp = createTimestamp();
-    addEvent(sessionId, {
-      type: "status",
-      data: {
-        session_id: sessionId,
-        seq: nextSeq(),
-        timestamp,
-        status: "completed",
-      },
     });
-    updateSessionStatus(sessionId, "completed", timestamp);
-    await loadSessions();
-  });
 
-  await listen<[string, string]>("session-error", async (event) => {
-    const [sessionId, error] = event.payload;
-    if (canonicalSessionEventIds.has(sessionId)) {
+    await listen<[string, string]>("session-error", async (event) => {
+      const [sessionId, error] = event.payload;
+      if (canonicalSessionEventIds.has(sessionId)) {
+        await loadSessions();
+        return;
+      }
+
+      const timestamp = createTimestamp();
+      const seq = nextSeq();
+      flushMessageBuffer(sessionId, seq, timestamp);
+      addEvent(sessionId, {
+        type: "error",
+        data: {
+          session_id: sessionId,
+          seq,
+          timestamp,
+          error,
+        },
+      });
+      addEvent(sessionId, {
+        type: "status",
+        data: {
+          session_id: sessionId,
+          seq: nextSeq(),
+          timestamp: createTimestamp(),
+          status: "failed",
+        },
+      });
+      updateSessionStatus(sessionId, "failed", timestamp);
       await loadSessions();
-      return;
-    }
+    });
 
-    const timestamp = createTimestamp();
-    const seq = nextSeq();
-    flushMessageBuffer(sessionId, seq, timestamp);
-    addEvent(sessionId, {
-      type: "error",
-      data: {
-        session_id: sessionId,
-        seq,
-        timestamp,
-        error,
-      },
-    });
-    addEvent(sessionId, {
-      type: "status",
-      data: {
-        session_id: sessionId,
-        seq: nextSeq(),
-        timestamp: createTimestamp(),
-        status: "failed",
-      },
-    });
-    updateSessionStatus(sessionId, "failed", timestamp);
-    await loadSessions();
-  });
+    listenerInitialized = true;
+  } finally {
+    listenerInitializing = false;
+  }
 }

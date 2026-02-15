@@ -105,6 +105,18 @@ fn invalid_cli_override_path_fails_fast() {
 }
 
 #[test]
+fn invalid_cli_override_directory_fails_fast() {
+    let directory_path = std::env::temp_dir();
+    match ClaudeCli::find_with_override(Some(directory_path.clone())) {
+        Ok(_) => panic!("directory override path should error"),
+        Err(err) => {
+            assert!(err.contains("Invalid CLI override path"));
+            assert!(err.contains("must be a file path"));
+        }
+    }
+}
+
+#[test]
 fn unsupported_cli_version_is_rejected() {
     let result = ClaudeCli::validate_version_output("claude 0.8.9");
     assert!(result.is_err());

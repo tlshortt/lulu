@@ -8,14 +8,14 @@
 
   let name = $state("");
   let prompt = $state("");
-  let workingDir = $state("");
+  let workingDir = $state("~");
   let isSubmitting = $state(false);
   let error = $state<string | null>(null);
 
   const resetForm = () => {
     name = "";
     prompt = "";
-    workingDir = "";
+    workingDir = "~";
     error = null;
   };
 
@@ -32,11 +32,11 @@
   };
 
   const handleBackdropKey = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      handleClose();
+    if (event.target !== event.currentTarget) {
+      return;
     }
 
-    if (event.key === "Enter" || event.key === " ") {
+    if (event.key === "Escape") {
       handleClose();
     }
   };
@@ -65,6 +65,19 @@
     } finally {
       isSubmitting = false;
     }
+  };
+
+  const handleFormKeydown = (event: KeyboardEvent) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    if (event.target instanceof HTMLTextAreaElement) {
+      return;
+    }
+
+    event.preventDefault();
+    void handleSubmit();
   };
 </script>
 
@@ -114,6 +127,7 @@
             bind:value={name}
             placeholder="Design review"
             autocomplete="off"
+            onkeydown={handleFormKeydown}
           />
         </label>
 
@@ -133,6 +147,7 @@
             bind:value={workingDir}
             placeholder="/Users/you/workspace/project"
             autocomplete="off"
+            onkeydown={handleFormKeydown}
           />
         </label>
 

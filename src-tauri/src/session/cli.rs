@@ -28,8 +28,15 @@ impl ClaudeCli {
     /// Find Claude CLI with explicit override support
     pub fn find_with_override(override_path: Option<PathBuf>) -> Result<Self, String> {
         if let Some(path) = override_path {
-            if path.exists() {
+            if path.exists() && path.is_file() {
                 return Ok(ClaudeCli { path });
+            }
+
+            if path.exists() {
+                return Err(format!(
+                    "Invalid CLI override path: {} (must be a file path to the claude binary)",
+                    path.display()
+                ));
             }
 
             return Err(format!("Invalid CLI override path: {}", path.display()));
@@ -125,6 +132,7 @@ impl ClaudeCli {
         let mut child = Command::new(&self.path)
             .arg("-p")
             .arg(prompt)
+            .arg("--verbose")
             .arg("--output-format")
             .arg("stream-json")
             .current_dir(working_dir)

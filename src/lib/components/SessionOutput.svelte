@@ -2,6 +2,7 @@
   import ToolCallBlock from "$lib/components/ToolCallBlock.svelte";
   import {
     activeSessionId,
+    sessionDebug,
     sessionEvents,
     sessions,
     showThinking,
@@ -101,6 +102,17 @@
       ),
     ),
   );
+  const hiddenThinkingCount = $derived(
+    events.filter((event: SessionEvent) => event.type === "thinking").length,
+  );
+  const debug = $derived(
+    currentSessionId
+      ? ($sessionDebug[currentSessionId] ?? {
+          stderrTail: [],
+          updatedAt: "",
+        })
+      : null,
+  );
 </script>
 
 {#if !currentSessionId}
@@ -147,11 +159,61 @@
     </div>
 
     <div class="flex-1 space-y-3 overflow-auto px-6 py-4">
+      {#if currentSessionId && debug}
+        <details
+          class="rounded-lg border border-border/70 bg-background/35 px-4 py-3 text-xs text-foreground/70"
+        >
+          <summary
+            class="cursor-pointer select-none font-semibold uppercase tracking-[0.14em] text-foreground/55"
+          >
+            Debug: spawn args + stderr tail
+          </summary>
+          <div class="mt-3 space-y-2">
+            <div>
+              <span class="font-semibold text-foreground/65">CLI:</span>
+              <span class="ml-2 font-mono">{debug.cliPath ?? "(unknown)"}</span>
+            </div>
+            <div>
+              <span class="font-semibold text-foreground/65">Working dir:</span>
+              <span class="ml-2 font-mono"
+                >{debug.workingDir ?? "(unknown)"}</span
+              >
+            </div>
+            <div>
+              <span class="font-semibold text-foreground/65">Args:</span>
+              <pre
+                class="mt-1 whitespace-pre-wrap rounded border border-border/50 bg-background/45 px-2 py-1 font-mono">{(
+                  debug.args ?? []
+                ).join(" ") || "(none)"}</pre>
+            </div>
+            <div>
+              <span class="font-semibold text-foreground/65">stderr tail:</span>
+              {#if debug.stderrTail.length === 0}
+                <div class="mt-1 text-foreground/50">No stderr output yet.</div>
+              {:else}
+                <pre
+                  class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded border border-border/50 bg-background/45 px-2 py-1 font-mono">{debug.stderrTail.join(
+                    "\n",
+                  )}</pre>
+              {/if}
+            </div>
+          </div>
+        </details>
+      {/if}
+
       {#if renderItems.length === 0}
         <div
           class="rounded-lg border border-dashed border-border/70 bg-background/35 px-4 py-6 text-sm text-foreground/55"
         >
-          No activity yet
+          {#if session?.status === "running"}
+            {#if !$showThinking && hiddenThinkingCount > 0}
+              No visible output yet. Click "Show thinking" to view reasoning.
+            {:else}
+              Waiting for first output...
+            {/if}
+          {:else}
+            No activity yet
+          {/if}
         </div>
       {:else}
         {#each renderItems as item}
