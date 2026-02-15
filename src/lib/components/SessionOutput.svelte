@@ -1,10 +1,12 @@
 <script lang="ts">
   import { sessionOutputs, sessions } from "$lib/stores/sessions";
 
-  export let sessionId: string | null = null;
+  const { sessionId = null } = $props<{ sessionId?: string | null }>();
 
-  $: output = sessionId ? $sessionOutputs[sessionId] ?? "" : "";
-  $: session = sessionId ? $sessions.find((item) => item.id === sessionId) : null;
+  const output = $derived(sessionId ? $sessionOutputs[sessionId] ?? "" : "");
+  const session = $derived(
+    sessionId ? $sessions.find((item) => item.id === sessionId) : null
+  );
 </script>
 
 {#if !sessionId}
