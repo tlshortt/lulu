@@ -8,84 +8,129 @@ vi.mock("$lib/stores/sessions", async () => {
 
   return {
     activeSessionId: writable<string | null>(null),
+    dashboardSelectedSessionId: writable<string | null>(null),
     cliPathOverride: writable(""),
     sessions: writable([
       {
         id: "session-1",
-        name: "Original Name",
+        name: "Build dashboard",
         status: "completed",
         working_dir: "/tmp/project",
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-01-01T00:00:00Z",
       },
     ]),
+    dashboardRows: writable([
+      {
+        id: "session-1",
+        name: "Build dashboard",
+        status: "Completed",
+        recentActivity: "2m",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ]),
     loadSessionHistory: vi.fn(async () => {}),
-    renameSession: vi.fn(async () => {}),
     removeSession: vi.fn(async () => {}),
   };
 });
 
-describe("Sidebar rename", () => {
+const readStore = <T>(store: {
+  subscribe: (cb: (value: T) => void) => () => void;
+}) => {
+  let value = undefined as T;
+  const unsubscribe = store.subscribe((next) => {
+    value = next;
+  });
+  unsubscribe();
+  return value;
+};
+
+describe("Sidebar dashboard interactions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStores.sessions.set([
       {
         id: "session-1",
-        name: "Original Name",
+        name: "Build dashboard",
         status: "completed",
         working_dir: "/tmp/project",
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-01-01T00:00:00Z",
       },
     ]);
+    (
+      sessionStores.dashboardRows as unknown as {
+        set: (value: unknown) => void;
+      }
+    ).set([
+      {
+        id: "session-1",
+        name: "Build dashboard",
+        status: "Completed",
+        recentActivity: "2m",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    sessionStores.activeSessionId.set(null);
+    sessionStores.dashboardSelectedSessionId.set(null);
   });
 
-  it("renames a session on Enter after double-click", async () => {
+  it("single click selects row without opening detail", async () => {
     render(Sidebar);
 
-    await fireEvent.doubleClick(screen.getByText("Original Name"));
-
-    const input = screen.getByDisplayValue("Original Name");
-    await fireEvent.input(input, { target: { value: "  Renamed Session  " } });
-    await fireEvent.keyDown(input, { key: "Enter" });
+    await fireEvent.click(screen.getByText("Build dashboard"));
 
     await waitFor(() => {
-      expect(sessionStores.renameSession).toHaveBeenCalledWith(
+      expect(readStore(sessionStores.dashboardSelectedSessionId)).toBe(
         "session-1",
-        "Renamed Session",
       );
     });
+    expect(readStore(sessionStores.activeSessionId)).toBeNull();
+    expect(sessionStores.loadSessionHistory).toHaveBeenCalledWith("session-1");
   });
 
-  it("renames a session on blur", async () => {
+  it("double click opens selected session detail", async () => {
     render(Sidebar);
 
-    await fireEvent.doubleClick(screen.getByText("Original Name"));
-
-    const input = screen.getByDisplayValue("Original Name");
-    await fireEvent.input(input, { target: { value: "Blur Rename" } });
-    await fireEvent.blur(input);
+    await fireEvent.doubleClick(screen.getByText("Build dashboard"));
 
     await waitFor(() => {
-      expect(sessionStores.renameSession).toHaveBeenCalledWith(
-        "session-1",
-        "Blur Rename",
-      );
+      expect(readStore(sessionStores.activeSessionId)).toBe("session-1");
     });
+    expect(readStore(sessionStores.dashboardSelectedSessionId)).toBe(
+      "session-1",
+    );
   });
 
-  it("cancels rename on Escape without persisting", async () => {
+  it("renders compact age and failure reason fields", async () => {
+    (
+      sessionStores.dashboardRows as unknown as {
+        set: (value: unknown) => void;
+      }
+    ).set([
+      {
+        id: "failed-1",
+        name: "Failed run",
+        status: "Failed",
+        recentActivity: "5s",
+        failureReason: "Command exited with status 2",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    sessionStores.sessions.set([
+      {
+        id: "failed-1",
+        name: "Failed run",
+        status: "failed",
+        working_dir: "/tmp/project",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+
     render(Sidebar);
 
-    await fireEvent.doubleClick(screen.getByText("Original Name"));
-
-    const input = screen.getByDisplayValue("Original Name");
-    await fireEvent.input(input, { target: { value: "Should Not Save" } });
-    await fireEvent.keyDown(input, { key: "Escape" });
-
-    await waitFor(() => {
-      expect(screen.queryByDisplayValue("Should Not Save")).toBeNull();
-    });
-    expect(sessionStores.renameSession).not.toHaveBeenCalled();
+    expect(screen.getByText("5s")).toBeTruthy();
+    expect(screen.getByText("Command exited with status 2")).toBeTruthy();
   });
 });

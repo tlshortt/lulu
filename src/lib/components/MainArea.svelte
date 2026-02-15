@@ -1,6 +1,10 @@
 <script lang="ts">
   import SessionOutput from "$lib/components/SessionOutput.svelte";
-  import { activeSessionId, sessions } from "$lib/stores/sessions";
+  import {
+    activeSessionId,
+    dashboardSelectedSessionId,
+    sessions,
+  } from "$lib/stores/sessions";
 </script>
 
 <section class="flex h-full flex-1 flex-col bg-background text-foreground">
@@ -33,10 +37,21 @@
       >
         Sessions
       </div>
-      <div class="text-xl font-semibold">Pick a session to view output</div>
+      <div class="text-xl font-semibold">
+        {#if $dashboardSelectedSessionId}
+          Double-click to open selected session output
+        {:else}
+          Pick a session to view output
+        {/if}
+      </div>
       <p class="max-w-md text-sm text-foreground/60">
-        Select a session from the sidebar to inspect events for that session
-        only.
+        {#if $dashboardSelectedSessionId}
+          Single click selects a dashboard row. Double-click that row to open
+          the full session stream here.
+        {:else}
+          Select a session from the sidebar to inspect events for that session
+          only.
+        {/if}
       </p>
     </div>
   {:else}
