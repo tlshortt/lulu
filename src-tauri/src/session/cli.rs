@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use which::which;
@@ -33,15 +34,12 @@ impl ClaudeCli {
     }
 
     /// Spawn Claude CLI with prompt, streaming output to callback
-    pub async fn spawn<F>(
+    pub async fn spawn_with_output(
         &self,
         prompt: &str,
         working_dir: &str,
-        mut on_output: F,
-    ) -> Result<(), String>
-    where
-        F: FnMut(String) + Send + 'static,
-    {
+        on_output: Arc<dyn Fn(String) + Send + Sync>,
+    ) -> Result<tokio::process::Child, String> {
         let mut child = Command::new(&self.path)
             .arg("-p")
             .arg(prompt)
@@ -57,40 +55,38 @@ impl ClaudeCli {
 
         let stdout_reader = BufReader::new(stdout);
         let mut stdout_lines = stdout_reader.lines();
+        let stdout_callback = on_output.clone();
 
         let stderr_reader = BufReader::new(stderr);
         let mut stderr_lines = stderr_reader.lines();
+        let stderr_callback = on_output.clone();
 
-        loop {
-            tokio::select! {
-                line = stdout_lines.next_line() => {
-                    match line {
-                        Ok(Some(line)) => on_output(format!("[stdout] {}", line)),
-                        Ok(None) => {},
-                        Err(e) => on_output(format!("[stdout error] {}", e)),
+        tokio::spawn(async move {
+            loop {
+                match stdout_lines.next_line().await {
+                    Ok(Some(line)) => (stdout_callback)(format!("[stdout] {}", line)),
+                    Ok(None) => break,
+                    Err(e) => {
+                        (stdout_callback)(format!("[stdout error] {}", e));
+                        break;
                     }
-                }
-                line = stderr_lines.next_line() => {
-                    match line {
-                        Ok(Some(line)) => on_output(format!("[stderr] {}", line)),
-                        Ok(None) => {},
-                        Err(e) => on_output(format!("[stderr error] {}", e)),
-                    }
-                }
-                status = child.wait() => {
-                    match status {
-                        Ok(status) => {
-                            on_output(format!("[exited] {}", status));
-                        }
-                        Err(e) => {
-                            on_output(format!("[wait error] {}", e));
-                        }
-                    }
-                    break;
                 }
             }
-        }
+        });
 
-        Ok(())
+        tokio::spawn(async move {
+            loop {
+                match stderr_lines.next_line().await {
+                    Ok(Some(line)) => (stderr_callback)(format!("[stderr] {}", line)),
+                    Ok(None) => break,
+                    Err(e) => {
+                        (stderr_callback)(format!("[stderr error] {}", e));
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok(child)
     }
 }

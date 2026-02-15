@@ -9,7 +9,7 @@ pub struct SessionManager {
 pub struct SessionHandle {
     pub id: String,
     pub name: String,
-    pub child: tokio::process::Child,
+    pub child: Arc<Mutex<tokio::process::Child>>,
     pub killed: Arc<Mutex<bool>>,
 }
 
@@ -26,7 +26,8 @@ impl SessionManager {
         for handle in sessions.values_mut() {
             let mut killed = handle.killed.lock().await;
             if !*killed {
-                let _ = handle.child.kill().await;
+                let mut child = handle.child.lock().await;
+                let _ = child.kill().await;
                 *killed = true;
             }
         }
