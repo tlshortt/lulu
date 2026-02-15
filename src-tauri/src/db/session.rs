@@ -2,6 +2,10 @@ use crate::db::{Database, DbError};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
+fn is_terminal_status(status: &str) -> bool {
+    matches!(status, "completed" | "failed" | "killed")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
@@ -98,6 +102,26 @@ impl Database {
 
         tx.commit()?;
         Ok(())
+    }
+
+    pub fn transition_session_terminal(&self, id: &str, status: &str) -> Result<bool, DbError> {
+        if !is_terminal_status(status) {
+            return Ok(false);
+        }
+
+        let mut conn = self.conn.lock().map_err(|_| DbError::Lock)?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let updated = tx.execute(
+            "UPDATE sessions
+             SET status = ?1, updated_at = ?2
+             WHERE id = ?3 AND status = 'running'",
+            params![status, now, id],
+        )?;
+
+        tx.commit()?;
+        Ok(updated > 0)
     }
 
     pub fn delete_session(&self, id: &str) -> Result<(), DbError> {
