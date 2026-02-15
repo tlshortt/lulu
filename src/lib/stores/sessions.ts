@@ -22,6 +22,8 @@ type MessageBuffers = Record<string, string>;
 const messageBuffers: MessageBuffers = {};
 let listenerInitialized = false;
 let sequenceCounter = 0;
+const canonicalSessionEventIds = new Set<string>();
+const TERMINAL_STATUSES = new Set(["completed", "failed", "killed"]);
 
 const canUseStorage = () => typeof window !== "undefined";
 
@@ -77,12 +79,82 @@ const nextSeq = () => {
 
 const createTimestamp = () => new Date().toISOString();
 
+const normalizeStatus = (status: string) => {
+  const normalized = status.toLowerCase();
+
+  if (normalized === "complete" || normalized === "done") {
+    return "completed";
+  }
+
+  if (normalized === "error") {
+    return "failed";
+  }
+
+  return normalized;
+};
+
+const isTerminalStatus = (status: string) =>
+  TERMINAL_STATUSES.has(normalizeStatus(status));
+
+const updateSessionStatus = (
+  sessionId: string,
+  status: string,
+  updatedAt: string,
+) => {
+  sessions.update((items) =>
+    items.map((item) =>
+      item.id === sessionId ? { ...item, status, updated_at: updatedAt } : item,
+    ),
+  );
+};
+
 function addEvent(sessionId: string, event: SessionEvent) {
   sessionEvents.update((events) => {
     const current = events[sessionId] ?? [];
+
+    if (
+      current.some(
+        (existing) =>
+          existing.type === event.type && existing.data.seq === event.data.seq,
+      )
+    ) {
+      return events;
+    }
+
+    if (event.type === "status") {
+      const incomingStatus = normalizeStatus(event.data.status);
+      const hasSameStatus = current.some(
+        (existing) =>
+          existing.type === "status" &&
+          normalizeStatus(existing.data.status) === incomingStatus,
+      );
+
+      if (
+        hasSameStatus &&
+        (incomingStatus === "running" || isTerminalStatus(incomingStatus))
+      ) {
+        return events;
+      }
+
+      if (
+        isTerminalStatus(incomingStatus) &&
+        current.some(
+          (existing) =>
+            existing.type === "status" &&
+            isTerminalStatus(existing.data.status),
+        )
+      ) {
+        return events;
+      }
+    }
+
+    const next = [...current, event].sort(
+      (left, right) => left.data.seq - right.data.seq,
+    );
+
     return {
       ...events,
-      [sessionId]: [...current, event],
+      [sessionId]: next,
     };
   });
 }
@@ -131,6 +203,7 @@ export function appendMessage(
 
 export function routeSessionEvent(event: SessionEvent) {
   const { session_id: sessionId, seq, timestamp } = event.data;
+  canonicalSessionEventIds.add(sessionId);
 
   if (event.type === "message") {
     appendMessage(
@@ -143,7 +216,26 @@ export function routeSessionEvent(event: SessionEvent) {
     return;
   }
 
-  if (event.type === "status" && event.data.status === "complete") {
+  if (event.type === "status") {
+    const status = normalizeStatus(event.data.status);
+    const normalizedEvent: SessionEvent = {
+      ...event,
+      data: {
+        ...event.data,
+        status,
+      },
+    };
+
+    if (isTerminalStatus(status)) {
+      flushMessageBuffer(sessionId, seq, timestamp);
+    }
+
+    addEvent(sessionId, normalizedEvent);
+    updateSessionStatus(sessionId, status, timestamp);
+    return;
+  }
+
+  if (event.type === "error") {
     flushMessageBuffer(sessionId, seq, timestamp);
   }
 
@@ -154,6 +246,7 @@ export function resetSessionEventStateForTests() {
   Object.keys(messageBuffers).forEach((sessionId) => {
     delete messageBuffers[sessionId];
   });
+  canonicalSessionEventIds.clear();
   sessionEvents.set({});
   sequenceCounter = 0;
   listenerInitialized = false;
@@ -196,49 +289,83 @@ export async function initSessionListeners() {
     "session-output",
     (event) => {
       const { session_id: sessionId, line } = event.payload;
+      if (canonicalSessionEventIds.has(sessionId)) {
+        return;
+      }
       appendMessage(sessionId, `${line}\n`, true);
     },
   );
 
   await listen<string>("session-started", (event) => {
     const sessionId = event.payload;
+    if (canonicalSessionEventIds.has(sessionId)) {
+      return;
+    }
+
+    const timestamp = createTimestamp();
     addEvent(sessionId, {
       type: "status",
       data: {
         session_id: sessionId,
         seq: nextSeq(),
-        timestamp: createTimestamp(),
+        timestamp,
         status: "running",
       },
     });
+    updateSessionStatus(sessionId, "running", timestamp);
   });
 
   await listen<string>("session-complete", async (event) => {
     const sessionId = event.payload;
+    if (canonicalSessionEventIds.has(sessionId)) {
+      await loadSessions();
+      return;
+    }
+
     flushMessageBuffer(sessionId);
+    const timestamp = createTimestamp();
     addEvent(sessionId, {
       type: "status",
       data: {
         session_id: sessionId,
         seq: nextSeq(),
-        timestamp: createTimestamp(),
-        status: "complete",
+        timestamp,
+        status: "completed",
       },
     });
+    updateSessionStatus(sessionId, "completed", timestamp);
     await loadSessions();
   });
 
   await listen<[string, string]>("session-error", async (event) => {
     const [sessionId, error] = event.payload;
+    if (canonicalSessionEventIds.has(sessionId)) {
+      await loadSessions();
+      return;
+    }
+
+    const timestamp = createTimestamp();
+    const seq = nextSeq();
+    flushMessageBuffer(sessionId, seq, timestamp);
     addEvent(sessionId, {
       type: "error",
       data: {
         session_id: sessionId,
-        seq: nextSeq(),
-        timestamp: createTimestamp(),
+        seq,
+        timestamp,
         error,
       },
     });
+    addEvent(sessionId, {
+      type: "status",
+      data: {
+        session_id: sessionId,
+        seq: nextSeq(),
+        timestamp: createTimestamp(),
+        status: "failed",
+      },
+    });
+    updateSessionStatus(sessionId, "failed", timestamp);
     await loadSessions();
   });
 }

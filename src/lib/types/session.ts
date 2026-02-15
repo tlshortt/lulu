@@ -34,7 +34,7 @@ export interface ThinkingEventData extends SessionEventBase {
 }
 
 export interface StatusEventData extends SessionEventBase {
-  status: "running" | "complete" | "error" | string;
+  status: "running" | "completed" | "failed" | "killed" | string;
   message?: string;
 }
 
