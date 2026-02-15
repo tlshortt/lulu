@@ -54,7 +54,8 @@
       await spawnSession(name.trim(), prompt.trim(), workingDir.trim());
       handleClose();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to start session.";
+      const message =
+        err instanceof Error ? err.message : "Failed to start session.";
       error = message;
     } finally {
       isSubmitting = false;
@@ -81,7 +82,8 @@
         <div>
           <div class="text-lg font-semibold">New Session</div>
           <div class="text-sm text-foreground/60">
-            Launch a Claude Code session with a name, prompt, and working directory.
+            Launch a Claude Code session with a name, prompt, and working
+            directory.
           </div>
         </div>
         <button
@@ -130,7 +132,9 @@
         </label>
 
         {#if error}
-          <div class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <div
+            class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
             {error}
           </div>
         {/if}

@@ -8,10 +8,14 @@
 
 {#if $sessions.length === 0}
   <div class="space-y-3 pb-6 text-sm text-foreground/60">
-    <div class="rounded-md border border-border bg-background/40 px-3 py-2 font-mono">
+    <div
+      class="rounded-md border border-border bg-background/40 px-3 py-2 font-mono"
+    >
       No sessions yet
     </div>
-    <div class="text-xs text-foreground/40">Launch a session to see it here.</div>
+    <div class="text-xs text-foreground/40">
+      Launch a session to see it here.
+    </div>
   </div>
 {:else}
   <ul class="space-y-2 pb-6">

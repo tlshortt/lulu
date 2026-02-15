@@ -9,7 +9,9 @@
   };
 </script>
 
-<aside class="flex h-full w-[280px] flex-col border-r border-border bg-sidebar text-foreground">
+<aside
+  class="flex h-full w-[280px] flex-col border-r border-border bg-sidebar text-foreground"
+>
   <div class="px-6 py-5">
     <div class="text-lg font-semibold tracking-tight">Lulu</div>
     <div class="text-xs text-foreground/50">Mission Control</div>
@@ -20,6 +22,8 @@
   </ScrollArea>
 
   <div class="p-4">
-    <Button class="w-full" variant="secondary" onclick={handleNewSession}>New Session</Button>
+    <Button class="w-full" variant="secondary" onclick={handleNewSession}
+      >New Session</Button
+    >
   </div>
 </aside>

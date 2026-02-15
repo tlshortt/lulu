@@ -26,13 +26,18 @@ export async function loadSessions() {
   selectedSessionId.update((current) => current ?? data[0]?.id ?? null);
 }
 
-export async function spawnSession(name: string, prompt: string, workingDir: string) {
+export async function spawnSession(
+  name: string,
+  prompt: string,
+  workingDir: string,
+) {
   const id = await invoke<string>("spawn_session", {
     name,
     prompt,
     workingDir,
   });
   await loadSessions();
+  selectedSessionId.set(id);
   return id;
 }
 
