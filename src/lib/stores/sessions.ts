@@ -129,7 +129,7 @@ export function appendMessage(
   }
 }
 
-function routeSessionEvent(event: SessionEvent) {
+export function routeSessionEvent(event: SessionEvent) {
   const { session_id: sessionId, seq, timestamp } = event.data;
 
   if (event.type === "message") {
@@ -148,6 +148,15 @@ function routeSessionEvent(event: SessionEvent) {
   }
 
   addEvent(sessionId, event);
+}
+
+export function resetSessionEventStateForTests() {
+  Object.keys(messageBuffers).forEach((sessionId) => {
+    delete messageBuffers[sessionId];
+  });
+  sessionEvents.set({});
+  sequenceCounter = 0;
+  listenerInitialized = false;
 }
 
 export async function loadSessions() {

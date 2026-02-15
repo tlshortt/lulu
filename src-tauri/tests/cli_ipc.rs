@@ -87,3 +87,19 @@ fn invalid_cli_override_path_fails_fast() {
         Err(err) => assert!(err.contains("Invalid CLI override path")),
     }
 }
+
+#[test]
+fn unsupported_cli_version_is_rejected() {
+    let result = ClaudeCli::validate_version_output("claude 0.8.9");
+    assert!(result.is_err());
+    let message = result.expect_err("unsupported versions should fail");
+    assert!(message.contains("Unsupported Claude CLI version"));
+}
+
+#[test]
+fn unknown_cli_version_format_is_rejected() {
+    let result = ClaudeCli::validate_version_output("claude version unknown");
+    assert!(result.is_err());
+    let message = result.expect_err("unknown format should fail");
+    assert!(message.contains("Unsupported Claude CLI version format"));
+}

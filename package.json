@@ -18,6 +18,7 @@
     "format:rust:check": "cd src-tauri && cargo fmt --all -- --check",
     "lint:rust": "cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings",
     "test:rust": "cd src-tauri && cargo test",
+    "test:phase1-startup": "npm run check && npm run test:unit -- sessions.isolation && cd src-tauri && cargo test --test cli_ipc --test runtime_startup",
     "test:all": "npm run check && npm run test:unit && npm run test:rust"
   },
   "license": "MIT",

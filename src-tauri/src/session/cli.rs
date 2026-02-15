@@ -2,11 +2,12 @@ use crate::session::events::{SessionEvent, SessionEventPayload};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TrySendError;
 use which::which;
 
 pub struct ClaudeCli {
@@ -114,6 +115,8 @@ impl ClaudeCli {
         session_id: &str,
         tx: mpsc::Sender<SessionEvent>,
     ) -> Result<tokio::process::Child, String> {
+        self.ensure_compatible().await?;
+
         let mut child = Command::new(&self.path)
             .arg("-p")
             .arg(prompt)
@@ -128,48 +131,166 @@ impl ClaudeCli {
         let stderr = child.stderr.take().expect("stderr not captured");
 
         let seq = Arc::new(AtomicU64::new(1));
+        let overflow_reported = Arc::new(AtomicBool::new(false));
         let tx_out = tx.clone();
         let out_session = session_id.to_string();
         let out_seq = seq.clone();
+        let out_overflow_reported = overflow_reported.clone();
 
-        let start = build_event(
+        try_send_with_overflow(
+            &tx,
             session_id,
-            seq.fetch_add(1, Ordering::SeqCst),
-            SessionEventPayload::Status {
-                status: "started".to_string(),
-            },
+            &seq,
+            &overflow_reported,
+            SessionEventPayload::Status { status: "running".to_string() },
         );
-        let _ = tx.try_send(start);
 
         tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                let event = parse_output_line(
+                let event =
+                    parse_output_line(&out_session, out_seq.fetch_add(1, Ordering::SeqCst), &line);
+                try_send_event_with_overflow(
+                    &tx_out,
                     &out_session,
-                    out_seq.fetch_add(1, Ordering::SeqCst),
-                    &line,
+                    &out_seq,
+                    &out_overflow_reported,
+                    event,
                 );
-                let _ = tx_out.try_send(event);
             }
         });
 
         let tx_err = tx.clone();
         let err_session = session_id.to_string();
+        let err_seq = seq.clone();
+        let err_overflow_reported = overflow_reported.clone();
         tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                let event = build_event(
+                try_send_with_overflow(
+                    &tx_err,
                     &err_session,
-                    seq.fetch_add(1, Ordering::SeqCst),
+                    &err_seq,
+                    &err_overflow_reported,
                     SessionEventPayload::Error { message: line },
                 );
-                let _ = tx_err.try_send(event);
             }
         });
 
         Ok(child)
+    }
+
+    pub async fn ensure_compatible(&self) -> Result<(), String> {
+        let output = Command::new(&self.path)
+            .arg("--version")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| format!("Failed to probe Claude CLI version: {}", e))?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "Failed to probe Claude CLI version: process exited with status {}",
+                output.status
+            ));
+        }
+
+        let version_raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Self::validate_version_output(&version_raw)
+    }
+
+    pub fn validate_version_output(version_raw: &str) -> Result<(), String> {
+        let (major, minor, patch) = parse_semver(version_raw).ok_or_else(|| {
+            format!(
+                "Unsupported Claude CLI version format: '{}'. Expected semantic version like 1.2.3",
+                version_raw
+            )
+        })?;
+
+        if major == 0 && minor < 9 {
+            return Err(format!(
+                "Unsupported Claude CLI version {}.{}.{}. Require >=0.9.0 for session-event parsing",
+                major, minor, patch
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+fn parse_semver(raw: &str) -> Option<(u64, u64, u64)> {
+    for token in raw.split_whitespace() {
+        let normalized = token.trim_matches(|c: char| !(c.is_ascii_digit() || c == '.'));
+        if normalized.is_empty() {
+            continue;
+        }
+
+        let mut parts = normalized.split('.');
+
+        let Some(major_raw) = parts.next() else {
+            continue;
+        };
+        let Some(minor_raw) = parts.next() else {
+            continue;
+        };
+        let Some(patch_raw) = parts.next() else {
+            continue;
+        };
+
+        let Ok(major) = major_raw.parse::<u64>() else {
+            continue;
+        };
+        let Ok(minor) = minor_raw.parse::<u64>() else {
+            continue;
+        };
+        let Ok(patch) = patch_raw.parse::<u64>() else {
+            continue;
+        };
+
+        return Some((major, minor, patch));
+    }
+
+    None
+}
+
+fn try_send_with_overflow(
+    tx: &mpsc::Sender<SessionEvent>,
+    session_id: &str,
+    seq: &Arc<AtomicU64>,
+    overflow_reported: &Arc<AtomicBool>,
+    payload: SessionEventPayload,
+) {
+    let event = build_event(session_id, seq.fetch_add(1, Ordering::SeqCst), payload);
+    try_send_event_with_overflow(tx, session_id, seq, overflow_reported, event);
+}
+
+fn try_send_event_with_overflow(
+    tx: &mpsc::Sender<SessionEvent>,
+    session_id: &str,
+    seq: &Arc<AtomicU64>,
+    overflow_reported: &Arc<AtomicBool>,
+    event: SessionEvent,
+) {
+    match tx.try_send(event) {
+        Ok(_) => {
+            overflow_reported.store(false, Ordering::SeqCst);
+        }
+        Err(TrySendError::Closed(_)) => {}
+        Err(TrySendError::Full(_)) => {
+            if !overflow_reported.swap(true, Ordering::SeqCst) {
+                let overflow = build_event(
+                    session_id,
+                    seq.fetch_add(1, Ordering::SeqCst),
+                    SessionEventPayload::Error {
+                        message: "event channel overflow: dropped session output".to_string(),
+                    },
+                );
+                let _ = tx.try_send(overflow);
+            }
+        }
     }
 }
 
@@ -189,13 +310,7 @@ pub fn parse_output_line(session_id: &str, seq: u64, line: &str) -> SessionEvent
         }
     }
 
-    build_event(
-        session_id,
-        seq,
-        SessionEventPayload::Message {
-            content: line.to_string(),
-        },
-    )
+    build_event(session_id, seq, SessionEventPayload::Message { content: line.to_string() })
 }
 
 fn parse_json_event(session_id: &str, seq: u64, value: Value) -> Option<SessionEvent> {
@@ -203,9 +318,9 @@ fn parse_json_event(session_id: &str, seq: u64, value: Value) -> Option<SessionE
     let data = value.get("data").cloned().unwrap_or(Value::Null);
 
     let payload = match event_type {
-        "message" => SessionEventPayload::Message {
-            content: data.get("content")?.as_str()?.to_string(),
-        },
+        "message" => {
+            SessionEventPayload::Message { content: data.get("content")?.as_str()?.to_string() }
+        }
         "tool_call" => {
             let tool_name = data
                 .get("tool_name")
@@ -225,18 +340,10 @@ fn parse_json_event(session_id: &str, seq: u64, value: Value) -> Option<SessionE
             SessionEventPayload::ToolResult { tool_name, result }
         }
         "status" => SessionEventPayload::Status {
-            status: data
-                .get("status")
-                .and_then(Value::as_str)
-                .unwrap_or("unknown")
-                .to_string(),
+            status: data.get("status").and_then(Value::as_str).unwrap_or("unknown").to_string(),
         },
         "error" => SessionEventPayload::Error {
-            message: data
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or("unknown")
-                .to_string(),
+            message: data.get("message").and_then(Value::as_str).unwrap_or("unknown").to_string(),
         },
         _ => return None,
     };
