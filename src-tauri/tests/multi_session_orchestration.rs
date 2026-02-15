@@ -7,7 +7,6 @@ use tokio::sync::Mutex;
 use tokio::time::{sleep, timeout, Duration};
 
 use tauri_app_lib::db::{init_database, Database, Session};
-use tauri_app_lib::session::projection::normalize_failure_reason;
 use tauri_app_lib::session::{ClaudeCli, SessionEventPayload, SessionSupervisor};
 
 #[derive(Clone)]
@@ -29,16 +28,13 @@ async fn reduce_terminal_once(
     failure_reason: Option<String>,
     finalize_counts: Arc<Mutex<HashMap<String, usize>>>,
 ) {
-    if !supervisor.begin_terminal_transition(session_id).await {
-        return;
-    }
+    let transition = supervisor
+        .finalize_terminal_transition(db.as_ref(), session_id, status, failure_reason)
+        .await
+        .expect("supervisor transition should not fail");
 
-    let _ = db.transition_session_terminal(session_id, status);
-    if status == "failed" || status == "killed" {
-        let _ = db.update_failure_reason(
-            session_id,
-            normalize_failure_reason(failure_reason.as_deref()).as_deref(),
-        );
+    if transition.is_none() {
+        return;
     }
 
     {
@@ -132,7 +128,7 @@ async fn run_one_session(
 }
 
 #[tokio::test]
-async fn supervisor_keeps_other_sessions_running_after_one_failure() {
+async fn supervisor_terminal_transition_applies_once_per_session() {
     let temp = tempdir().expect("tempdir should be created");
     let db_path = temp.path().join("lulu.db");
     let db = Arc::new(init_database(&db_path).expect("database should initialize"));

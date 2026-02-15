@@ -1,7 +1,7 @@
 use tauri_app_lib::commands::session::reconcile_sessions_on_startup;
-use tauri_app_lib::db::{init_database, Session};
+use tauri_app_lib::db::{init_database, Session, SessionDashboardRow};
 use tauri_app_lib::session::projection::{
-    normalize_dashboard_status, DASHBOARD_STATUS_COMPLETED, DASHBOARD_STATUS_FAILED,
+    normalize_dashboard_status, project_dashboard_row, DASHBOARD_STATUS_COMPLETED, DASHBOARD_STATUS_FAILED,
     DASHBOARD_STATUS_RUNNING,
 };
 use tauri_app_lib::session::WorktreeService;
@@ -43,6 +43,35 @@ fn projection_maps_internal_terminal_states_to_failed() {
 
     assert_eq!(normalize_dashboard_status("completed"), DASHBOARD_STATUS_COMPLETED);
     assert_eq!(normalize_dashboard_status("running"), DASHBOARD_STATUS_RUNNING);
+}
+
+#[test]
+fn projection_normalizes_dashboard_rows_to_locked_statuses() {
+    let failed = SessionDashboardRow {
+        id: "failed-1".to_string(),
+        name: "failed session".to_string(),
+        status: "killed".to_string(),
+        created_at: chrono::Utc::now().to_rfc3339(),
+        last_activity_at: None,
+        failure_reason: Some("  one\nline\tfailure reason  ".to_string()),
+        worktree_path: None,
+    };
+    let failed_projection = project_dashboard_row(failed);
+    assert_eq!(failed_projection.status, DASHBOARD_STATUS_FAILED);
+    assert_eq!(failed_projection.failure_reason.as_deref(), Some("one line failure reason"));
+
+    let completed = SessionDashboardRow {
+        id: "completed-1".to_string(),
+        name: "completed session".to_string(),
+        status: "done".to_string(),
+        created_at: chrono::Utc::now().to_rfc3339(),
+        last_activity_at: None,
+        failure_reason: Some("should disappear".to_string()),
+        worktree_path: None,
+    };
+    let completed_projection = project_dashboard_row(completed);
+    assert_eq!(completed_projection.status, DASHBOARD_STATUS_COMPLETED);
+    assert!(completed_projection.failure_reason.is_none());
 }
 
 #[test]
