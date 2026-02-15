@@ -10,27 +10,28 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 ## Current Position
 
 Phase: 2 of 6 (Single Session Core)
-Plan: 2 of 2 (02-01 complete)
-Status: In progress
-Last activity: 2026-02-15 — Completed 02-01 plan (single-session backend runtime hardening)
+Plan: 2 of 2 (02-02 complete)
+Status: Complete
+Last activity: 2026-02-15 — Completed 02-02 plan (frontend launch flow and canonical stream rendering)
 
-Progress: [█████████░] 88%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
+- Total plans completed: 8
 - Average duration: 5 min
-- Total execution time: 0.62 hours
+- Total execution time: 0.70 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 (Foundation & Architecture) | 6/7 | 31 min | 5 min |
-| 2 (Single Session Core) | 1/2 | 6 min | 6 min |
+| 2 (Single Session Core) | 2/2 | 11 min | 5 min |
 | Phase 01-foundation-architecture P05 | 3 min | 3 tasks | 6 files |
 | Phase 02 P01 | 6 min | 3 tasks | 7 files |
+| Phase 02 P02 | 5 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -53,6 +54,8 @@ Recent decisions affecting current work:
 - [Phase 01-foundation-architecture]: Expose activeSessionId as canonical store and keep selectedSessionId alias to avoid breaking existing consumers
 - [Phase 02-single-session-core]: Normalize Claude stream-json assistant/user/result frames into one typed payload contract before emitting session-event
 - [Phase 02-single-session-core]: Use a single terminal reducer guard to prevent duplicate completion/failure transitions from stream and child-exit paths
+- [Phase 02-single-session-core]: Normalize frontend status aliases (complete/done/error) to completed/failed before rendering and state updates
+- [Phase 02-single-session-core]: Gate compatibility listeners by canonical session-event presence to prevent duplicate terminal rows
 
 ### Pending Todos
 
@@ -67,9 +70,9 @@ None yet.
 
 ## Session Continuity
 
-Last Session: 2026-02-15 14:50 EST
-Stopped At: Completed 02-01-PLAN.md
+Last Session: 2026-02-15 14:58 EST
+Stopped At: Completed 02-02-PLAN.md
 Resume File: None
 
 ---
-*Last updated: 2026-02-15 after 02-01 execution*
+*Last updated: 2026-02-15 after 02-02 execution*
