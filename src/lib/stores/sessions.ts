@@ -1,7 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { get, writable } from "svelte/store";
-import type { SessionDebugEvent, SessionEvent } from "$lib/types/session";
+import { derived, get, writable } from "svelte/store";
+import type {
+  DashboardSessionRow,
+  DashboardStatus,
+  SessionDebugEvent,
+  SessionEvent,
+} from "$lib/types/session";
 
 export interface Session {
   id: string;
@@ -15,6 +20,7 @@ export interface Session {
 export const sessions = writable<Session[]>([]);
 export const activeSessionId = writable<string | null>(null);
 export const selectedSessionId = activeSessionId;
+export const dashboardSelectedSessionId = writable<string | null>(null);
 export const sessionEvents = writable<Record<string, SessionEvent[]>>({});
 export interface SessionDebugState {
   cliPath?: string;
@@ -42,6 +48,22 @@ let listenerInitializing = false;
 let sequenceCounter = 0;
 const canonicalSessionEventIds = new Set<string>();
 const TERMINAL_STATUSES = new Set(["completed", "failed", "killed"]);
+const FAILURE_STATUSES = new Set([
+  "failed",
+  "killed",
+  "error",
+  "interrupted",
+  "cancelled",
+  "canceled",
+  "crashed",
+]);
+const dashboardNow = writable(Date.now());
+
+if (typeof window !== "undefined") {
+  setInterval(() => {
+    dashboardNow.set(Date.now());
+  }, 1000);
+}
 
 const canUseStorage = () => typeof window !== "undefined";
 
@@ -110,6 +132,110 @@ const normalizeStatus = (status: string) => {
 
   return normalized;
 };
+
+const toDashboardStatus = (status: string): DashboardStatus => {
+  const normalized = normalizeStatus(status);
+
+  if (normalized === "running") {
+    return "Running";
+  }
+
+  if (normalized === "completed") {
+    return "Completed";
+  }
+
+  if (FAILURE_STATUSES.has(normalized)) {
+    return "Failed";
+  }
+
+  return "Starting";
+};
+
+const toEpoch = (iso: string) => {
+  const value = Date.parse(iso);
+  return Number.isFinite(value) ? value : 0;
+};
+
+const compactAgeLabel = (timestamp: string, now: number) => {
+  const ageMs = Math.max(0, now - toEpoch(timestamp));
+  const ageSeconds = Math.floor(ageMs / 1000);
+
+  if (ageSeconds < 60) {
+    return `${ageSeconds}s`;
+  }
+
+  const ageMinutes = Math.floor(ageSeconds / 60);
+  if (ageMinutes < 60) {
+    return `${ageMinutes}m`;
+  }
+
+  const ageHours = Math.floor(ageMinutes / 60);
+  if (ageHours < 24) {
+    return `${ageHours}h`;
+  }
+
+  const ageDays = Math.floor(ageHours / 24);
+  return `${ageDays}d`;
+};
+
+const toSingleLine = (value: string) => value.replace(/\s+/g, " ").trim();
+
+const extractFailureReason = (events: SessionEvent[]) => {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+
+    if (event.type === "error") {
+      const reason = toSingleLine(event.data.error);
+      if (reason.length > 0) {
+        return reason;
+      }
+    }
+
+    if (
+      event.type === "status" &&
+      FAILURE_STATUSES.has(normalizeStatus(event.data.status))
+    ) {
+      const reason = toSingleLine(event.data.message ?? "");
+      if (reason.length > 0) {
+        return reason;
+      }
+    }
+  }
+
+  return undefined;
+};
+
+export const dashboardRows = derived(
+  [sessions, sessionEvents, dashboardNow],
+  ([$sessions, $sessionEvents, $dashboardNow]): DashboardSessionRow[] =>
+    [...$sessions]
+      .sort((left, right) => {
+        const dateDelta = toEpoch(right.created_at) - toEpoch(left.created_at);
+        if (dateDelta !== 0) {
+          return dateDelta;
+        }
+
+        return right.id.localeCompare(left.id);
+      })
+      .map((session) => {
+        const status = toDashboardStatus(session.status);
+        const events = $sessionEvents[session.id] ?? [];
+
+        return {
+          id: session.id,
+          name: session.name,
+          status,
+          recentActivity: compactAgeLabel(session.updated_at, $dashboardNow),
+          failureReason:
+            status === "Failed" ? extractFailureReason(events) : undefined,
+          createdAt: session.created_at,
+        } satisfies DashboardSessionRow;
+      }),
+);
+
+export function refreshDashboardNowForTests(now: number) {
+  dashboardNow.set(now);
+}
 
 const isTerminalStatus = (status: string) =>
   TERMINAL_STATUSES.has(normalizeStatus(status));
@@ -273,6 +399,7 @@ export function resetSessionEventStateForTests() {
   sequenceCounter = 0;
   listenerInitialized = false;
   listenerInitializing = false;
+  dashboardNow.set(Date.now());
 }
 
 function routeSessionDebugEvent(event: SessionDebugEvent) {
@@ -319,6 +446,9 @@ export async function loadSessions() {
   const data = await invoke<Session[]>("list_sessions");
   sessions.set(data);
   activeSessionId.update((current) => current ?? data[0]?.id ?? null);
+  dashboardSelectedSessionId.update(
+    (current) => current ?? data[0]?.id ?? null,
+  );
 
   for (const session of data) {
     if (normalizeStatus(session.status) !== "running") {
@@ -419,6 +549,13 @@ function removeSessionLocal(sessionId: string) {
 
     return get(sessions)[0]?.id ?? null;
   });
+  dashboardSelectedSessionId.update((current) => {
+    if (current !== sessionId) {
+      return current;
+    }
+
+    return get(sessions)[0]?.id ?? null;
+  });
 }
 
 export async function spawnSession(
@@ -436,6 +573,7 @@ export async function spawnSession(
   });
   await loadSessions();
   activeSessionId.set(id);
+  dashboardSelectedSessionId.set(id);
   return id;
 }
 

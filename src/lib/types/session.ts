@@ -59,3 +59,14 @@ export interface SessionDebugEvent {
   working_dir?: string;
   message?: string;
 }
+
+export type DashboardStatus = "Starting" | "Running" | "Completed" | "Failed";
+
+export interface DashboardSessionRow {
+  id: string;
+  name: string;
+  status: DashboardStatus;
+  recentActivity: string;
+  failureReason?: string;
+  createdAt: string;
+}
