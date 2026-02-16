@@ -98,11 +98,11 @@ Plans:
   3. User can continue/resume a completed or interrupted session with a new prompt
   4. App handles session errors gracefully with clear error messages
   5. Sessions recover from errors without crashing the application
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — TBD
-- [ ] 05-02-PLAN.md — TBD
+- [ ] 05-01-PLAN.md — Backend-authoritative interrupt/resume lifecycle with 10s retry/deadline and same-row resume continuity
+- [ ] 05-02-PLAN.md — Session-scoped lifecycle UI controls (row + detail) with locked interrupt UX and isolation regression coverage
 
 ### Phase 6: Persistence & History
 **Goal**: Sessions persist across app restarts and users can review complete session history
