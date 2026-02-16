@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 **Current Phase:** 5
 **Current Phase Name:** Session Lifecycle Control
 **Total Phases:** 6
-**Current Plan:** 1
+**Current Plan:** 2
 **Total Plans in Phase:** 2
 **Status:** Ready to execute
 **Last Activity:** 2026-02-16
@@ -22,7 +22,7 @@ Plan: 0 of 2 (not started)
 Status: Ready to plan Phase 5; Phase 4 intentionally scrapped
 Last activity: 2026-02-16 — Rolled codebase back to post-Phase-3 commit and removed Phase 4 scope
 
-**Progress:** [█████████░] 94%
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 
@@ -46,6 +46,7 @@ Last activity: 2026-02-16 — Rolled codebase back to post-Phase-3 commit and re
 | Phase 03 P04 | 4 min | 3 tasks | 5 files |
 | Phase 03 P05 | 2 min | 3 tasks | 5 files |
 | Phase 05 P01 | 5 min | 2 tasks | 8 files |
+| Phase 05 P02 | 6 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,9 @@ Recent decisions affecting current work:
 - [Roadmap]: Realign dependencies so Phase 5 now depends on Phase 3.
 - [Phase 05]: Use Lulu session id for deterministic Claude CLI identity via --session-id on spawn and --resume on continuation
 - [Phase 05]: Enforce per-session lifecycle operation gates and interrupt retry/deadline logic inside SessionSupervisor
+- [Phase 05]: Model lifecycle operation and error state as session-scoped records so one failed interrupt never disables unrelated sessions.
+- [Phase 05]: Promote Interrupted to first-class dashboard vocabulary instead of mapping it to Failed.
+- [Phase 05]: Keep interrupt feedback compact in rows (chip + spinner) and expose richer lifecycle actions in row/detail controls.
 
 ### Pending Todos
 
@@ -99,8 +103,8 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T17:54:52.601Z
-**Stopped At:** Completed 05-01-PLAN.md
+**Last session:** 2026-02-16T21:29:16.337Z
+**Stopped At:** Completed 05-02-PLAN.md
 **Resume File:** None
 
 ---
