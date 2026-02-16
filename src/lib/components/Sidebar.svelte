@@ -62,7 +62,7 @@
 
   const statusBadgeClass = (status: DashboardStatus) => {
     if (status === "Running") {
-      return "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
+      return "border-amber-400/45 bg-amber-400/10 text-amber-200";
     }
 
     if (status === "Completed") {
@@ -229,7 +229,7 @@
                   >
                     {#if row.status === "Running"}
                       <span
-                        class="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300"
+                        class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300"
                       ></span>
                     {/if}
                     {row.status}
