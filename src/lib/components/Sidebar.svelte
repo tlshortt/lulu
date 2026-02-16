@@ -6,11 +6,15 @@
     cliPathOverride,
     dashboardRows,
     dashboardSelectedSessionId,
+    interruptSession,
     initialSessionsLoadError,
     initialSessionsHydrated,
     loadSessionHistory,
     renameSession,
     removeSession,
+    resumeSession,
+    sessionErrors,
+    sessionOperations,
     sessions,
   } from "$lib/stores/sessions";
   import type { Session } from "$lib/stores/sessions";
@@ -70,6 +74,10 @@
       return "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
     }
 
+    if (status === "Interrupted") {
+      return "border-sky-500/40 bg-sky-500/10 text-sky-200";
+    }
+
     if (status === "Failed") {
       return "border-destructive/45 bg-destructive/15 text-destructive";
     }
@@ -81,6 +89,34 @@
     new Map($sessions.map((session) => [session.id, session.status])),
   );
 
+  const normalizeStatus = (status: string) => {
+    const normalized = status.toLowerCase();
+
+    if (normalized === "complete" || normalized === "done") {
+      return "completed";
+    }
+
+    if (normalized === "error") {
+      return "failed";
+    }
+
+    return normalized;
+  };
+
+  const canInterruptStatus = (status: string) => {
+    const normalized = normalizeStatus(status);
+    return (
+      normalized === "starting" ||
+      normalized === "running" ||
+      normalized === "resuming"
+    );
+  };
+
+  const canResumeStatus = (status: string) => {
+    const normalized = normalizeStatus(status);
+    return normalized === "completed" || normalized === "interrupted";
+  };
+
   const sessionsById = $derived(
     new Map($sessions.map((session) => [session.id, session])),
   );
@@ -88,6 +124,7 @@
   let editingSessionId = $state<string | null>(null);
   let editingName = $state("");
   let renameInput = $state<HTMLInputElement | null>(null);
+  let resumePromptsBySessionId = $state<Record<string, string>>({});
 
   const startRename = (session: Session) => {
     editingSessionId = session.id;
@@ -120,6 +157,41 @@
       console.error("Failed to rename session", error);
     } finally {
       cancelRename();
+    }
+  };
+
+  const setResumePrompt = (sessionId: string, prompt: string) => {
+    resumePromptsBySessionId = {
+      ...resumePromptsBySessionId,
+      [sessionId]: prompt,
+    };
+  };
+
+  const handleInterrupt = async (sessionId: string) => {
+    const confirmed = window.confirm("Interrupt session?");
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await interruptSession(sessionId);
+    } catch (error) {
+      console.error("Failed to interrupt session", error);
+    }
+  };
+
+  const handleResume = async (sessionId: string) => {
+    const prompt = resumePromptsBySessionId[sessionId]?.trim() ?? "";
+    if (!prompt) {
+      return;
+    }
+
+    try {
+      await resumeSession(sessionId, prompt);
+      setResumePrompt(sessionId, "");
+    } catch (error) {
+      console.error("Failed to resume session", error);
     }
   };
 </script>
@@ -232,15 +304,24 @@
                 <span class="flex items-center gap-2">
                   <span
                     class={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] ${statusBadgeClass(
-                      row.status,
+                      $sessionOperations[row.id] === "interrupting"
+                        ? "Running"
+                        : row.status,
                     )}`}
                   >
-                    {#if row.status === "Running"}
+                    {#if row.status === "Running" && $sessionOperations[row.id] !== "interrupting"}
                       <span
                         class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300"
                       ></span>
                     {/if}
-                    {row.status}
+                    {#if $sessionOperations[row.id] === "interrupting"}
+                      <span
+                        class="h-1.5 w-1.5 animate-spin rounded-full border border-amber-200 border-t-transparent"
+                      ></span>
+                    {/if}
+                    {$sessionOperations[row.id] === "interrupting"
+                      ? "Interrupting..."
+                      : row.status}
                   </span>
                   {#if row.status === "Failed" && row.failureReason}
                     <span class="truncate text-xs text-foreground/55"
@@ -249,6 +330,73 @@
                   {/if}
                 </span>
               </button>
+              {#if canInterruptStatus(rawStatusesBySessionId.get(row.id) ?? "running") || canResumeStatus(rawStatusesBySessionId.get(row.id) ?? "running")}
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                  {#if canInterruptStatus(rawStatusesBySessionId.get(row.id) ?? "running")}
+                    <button
+                      class="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] uppercase tracking-[0.08em] text-amber-200 transition hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+                      type="button"
+                      disabled={Boolean($sessionOperations[row.id])}
+                      onclick={(event) => {
+                        event.stopPropagation();
+                        void handleInterrupt(row.id);
+                      }}
+                    >
+                      {Boolean($sessionOperations[row.id]) &&
+                      $sessionOperations[row.id] === "interrupting"
+                        ? "Interrupting..."
+                        : "Interrupt"}
+                    </button>
+                  {/if}
+
+                  {#if canResumeStatus(rawStatusesBySessionId.get(row.id) ?? "running")}
+                    <input
+                      class="min-w-0 flex-1 rounded border border-border bg-background/45 px-2 py-1 text-xs text-foreground outline-none focus:border-ring disabled:cursor-not-allowed disabled:opacity-60"
+                      type="text"
+                      placeholder="Continue this session..."
+                      value={resumePromptsBySessionId[row.id] ?? ""}
+                      disabled={Boolean($sessionOperations[row.id])}
+                      oninput={(event) => {
+                        event.stopPropagation();
+                        setResumePrompt(
+                          row.id,
+                          (event.currentTarget as HTMLInputElement).value,
+                        );
+                      }}
+                      onkeydown={(event) => {
+                        event.stopPropagation();
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void handleResume(row.id);
+                        }
+                      }}
+                      onclick={(event) => event.stopPropagation()}
+                    />
+                    <button
+                      class="rounded border border-emerald-500/35 bg-emerald-500/10 px-2 py-1 text-[11px] uppercase tracking-[0.08em] text-emerald-200 transition hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+                      type="button"
+                      disabled={Boolean($sessionOperations[row.id]) ||
+                        !(resumePromptsBySessionId[row.id]?.trim().length > 0)}
+                      onclick={(event) => {
+                        event.stopPropagation();
+                        void handleResume(row.id);
+                      }}
+                    >
+                      {Boolean($sessionOperations[row.id]) &&
+                      $sessionOperations[row.id] === "resuming"
+                        ? "Resuming..."
+                        : "Resume"}
+                    </button>
+                  {/if}
+                </div>
+              {/if}
+              {#if $sessionErrors[row.id]}
+                <div
+                  class="mt-2 rounded border border-destructive/35 bg-destructive/10 px-2 py-1 text-xs text-destructive"
+                >
+                  {$sessionErrors[row.id]}
+                </div>
+              {/if}
               {#if editingSessionId !== row.id}
                 <button
                   class="absolute right-7 top-2 rounded px-1 text-xs text-foreground/40 transition hover:text-foreground"

@@ -2,14 +2,48 @@
   import ToolCallBlock from "$lib/components/ToolCallBlock.svelte";
   import {
     activeSessionId,
+    interruptSession,
+    resumeSession,
     sessionDebug,
+    sessionErrors,
     sessionEvents,
+    sessionOperations,
     sessions,
     showThinking,
   } from "$lib/stores/sessions";
   import type { SessionEvent, ToolResultEventData } from "$lib/types/session";
 
   const { sessionId = null } = $props<{ sessionId?: string | null }>();
+
+  let resumePrompt = $state("");
+
+  const normalizeStatus = (status: string) => {
+    const normalized = status.toLowerCase();
+
+    if (normalized === "complete" || normalized === "done") {
+      return "completed";
+    }
+
+    if (normalized === "error") {
+      return "failed";
+    }
+
+    return normalized;
+  };
+
+  const canInterruptStatus = (status: string) => {
+    const normalized = normalizeStatus(status);
+    return (
+      normalized === "starting" ||
+      normalized === "running" ||
+      normalized === "resuming"
+    );
+  };
+
+  const canResumeStatus = (status: string) => {
+    const normalized = normalizeStatus(status);
+    return normalized === "completed" || normalized === "interrupted";
+  };
 
   interface ToolCallRender {
     call: Extract<SessionEvent, { type: "tool_call" }>;
@@ -113,6 +147,44 @@
         })
       : null,
   );
+  const currentOperation = $derived(
+    currentSessionId ? ($sessionOperations[currentSessionId] ?? null) : null,
+  );
+  const currentError = $derived(
+    currentSessionId ? ($sessionErrors[currentSessionId] ?? null) : null,
+  );
+  const canInterrupt = $derived(canInterruptStatus(session?.status ?? ""));
+  const canResume = $derived(canResumeStatus(session?.status ?? ""));
+
+  const handleInterrupt = async () => {
+    if (!currentSessionId) {
+      return;
+    }
+
+    const confirmed = window.confirm("Interrupt session?");
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await interruptSession(currentSessionId);
+    } catch (error) {
+      console.error("Failed to interrupt session", error);
+    }
+  };
+
+  const handleResume = async () => {
+    if (!currentSessionId || !resumePrompt.trim()) {
+      return;
+    }
+
+    try {
+      await resumeSession(currentSessionId, resumePrompt);
+      resumePrompt = "";
+    } catch (error) {
+      console.error("Failed to resume session", error);
+    }
+  };
 </script>
 
 {#if !currentSessionId}
@@ -145,18 +217,65 @@
         </div>
       </div>
 
-      <button
-        class={`rounded-md border px-3 py-1 text-xs transition ${
-          $showThinking
-            ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-100"
-            : "border-border bg-background/50 text-foreground/70 hover:text-foreground"
-        }`}
-        type="button"
-        onclick={() => showThinking.update((value: boolean) => !value)}
-      >
-        {$showThinking ? "Hide thinking" : "Show thinking"}
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          class={`rounded-md border px-3 py-1 text-xs transition ${
+            $showThinking
+              ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-100"
+              : "border-border bg-background/50 text-foreground/70 hover:text-foreground"
+          }`}
+          type="button"
+          onclick={() => showThinking.update((value: boolean) => !value)}
+        >
+          {$showThinking ? "Hide thinking" : "Show thinking"}
+        </button>
+
+        {#if canInterrupt}
+          <button
+            class="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs uppercase tracking-[0.08em] text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            type="button"
+            disabled={Boolean(currentOperation)}
+            onclick={handleInterrupt}
+          >
+            {currentOperation === "interrupting"
+              ? "Interrupting..."
+              : "Interrupt"}
+          </button>
+        {/if}
+
+        {#if canResume}
+          <input
+            class="w-52 rounded-md border border-border bg-background/50 px-2 py-1 text-xs text-foreground outline-none focus:border-ring disabled:cursor-not-allowed disabled:opacity-60"
+            type="text"
+            bind:value={resumePrompt}
+            placeholder="Continue this session..."
+            disabled={Boolean(currentOperation)}
+            onkeydown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void handleResume();
+              }
+            }}
+          />
+          <button
+            class="rounded-md border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 text-xs uppercase tracking-[0.08em] text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            type="button"
+            disabled={Boolean(currentOperation) || !resumePrompt.trim()}
+            onclick={handleResume}
+          >
+            {currentOperation === "resuming" ? "Resuming..." : "Resume"}
+          </button>
+        {/if}
+      </div>
     </div>
+
+    {#if currentError}
+      <div
+        class="mx-6 mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+      >
+        {currentError}
+      </div>
+    {/if}
 
     <div class="flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-6 py-4">
       {#if currentSessionId && debug}
