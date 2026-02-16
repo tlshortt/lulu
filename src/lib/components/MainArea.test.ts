@@ -83,6 +83,9 @@ describe("MainArea", () => {
 
     expect(screen.getByText("Loading sessions...")).toBeTruthy();
     expect(screen.queryByText("No active sessions")).toBeNull();
+    expect(
+      screen.queryByText("Double-click to open selected session output"),
+    ).toBeNull();
   });
 
   it("shows load error when initial fetch fails", () => {

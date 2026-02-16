@@ -7,12 +7,20 @@
     initialSessionsHydrated,
     sessions,
   } from "$lib/stores/sessions";
+
+  const showHydrationGate = $derived(!$initialSessionsHydrated);
+  const showStartupView = $derived(
+    $initialSessionsHydrated && $sessions.length === 0,
+  );
+  const showSelectionHint = $derived(
+    $initialSessionsHydrated && $sessions.length > 0 && !$activeSessionId,
+  );
 </script>
 
 <section
   class="flex h-full min-w-0 flex-1 flex-col bg-background text-foreground"
 >
-  {#if !$initialSessionsHydrated}
+  {#if showHydrationGate}
     <div
       class="flex h-full flex-col items-center justify-center gap-4 px-8 text-center"
     >
@@ -26,7 +34,7 @@
         Preparing your dashboard and syncing the latest session state.
       </p>
     </div>
-  {:else if $sessions.length === 0}
+  {:else if showStartupView}
     <div
       class="flex h-full flex-col items-center justify-center gap-4 px-8 text-center"
     >
@@ -52,7 +60,7 @@
         Press <span class="text-foreground">⌘ + N</span> to start a new session
       </div>
     </div>
-  {:else if !$activeSessionId}
+  {:else if showSelectionHint}
     <div
       class="flex h-full flex-col items-center justify-center gap-3 px-8 text-center"
     >
