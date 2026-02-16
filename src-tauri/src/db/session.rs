@@ -3,7 +3,11 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
 fn is_terminal_status(status: &str) -> bool {
-    matches!(status, "completed" | "failed" | "killed")
+    matches!(status, "completed" | "failed" | "killed" | "interrupted")
+}
+
+fn is_inflight_status(status: &str) -> bool {
+    matches!(status, "starting" | "running" | "interrupting" | "resuming")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +38,13 @@ pub struct SessionDashboardRow {
     pub last_activity_at: Option<String>,
     pub failure_reason: Option<String>,
     pub worktree_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionRunMetadata {
+    pub resume_count: i64,
+    pub active_run_id: Option<String>,
+    pub last_resume_at: Option<String>,
 }
 
 impl Database {
@@ -150,7 +161,7 @@ impl Database {
         let updated = tx.execute(
             "UPDATE sessions
              SET status = ?1, updated_at = ?2
-             WHERE id = ?3 AND status = 'running'",
+             WHERE id = ?3 AND status IN ('running', 'interrupting', 'resuming')",
             params![status, now, id],
         )?;
 
@@ -282,6 +293,96 @@ impl Database {
 
         tx.commit()?;
         Ok(stale_ids)
+    }
+
+    pub fn transition_session_to_interrupting(&self, id: &str) -> Result<bool, DbError> {
+        let mut conn = self.conn.lock().map_err(|_| DbError::Lock)?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        let mut stmt = tx.prepare("SELECT status FROM sessions WHERE id = ?1")?;
+        let mut rows = stmt.query(params![id])?;
+
+        let Some(row) = rows.next()? else {
+            return Ok(false);
+        };
+
+        let current_status: String = row.get(0)?;
+        if !is_inflight_status(&current_status) {
+            return Ok(false);
+        }
+        drop(rows);
+        drop(stmt);
+
+        let updated = tx.execute(
+            "UPDATE sessions
+             SET status = 'interrupting', updated_at = ?1
+             WHERE id = ?2",
+            params![chrono::Utc::now().to_rfc3339(), id],
+        )?;
+
+        tx.commit()?;
+        Ok(updated > 0)
+    }
+
+    pub fn begin_resume_attempt(&self, id: &str, run_id: &str, resumed_at: &str) -> Result<bool, DbError> {
+        let mut conn = self.conn.lock().map_err(|_| DbError::Lock)?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        let updated = tx.execute(
+            "UPDATE sessions
+             SET status = 'resuming',
+                 resume_count = resume_count + 1,
+                 active_run_id = ?1,
+                 last_resume_at = ?2,
+                 failure_reason = NULL,
+                 updated_at = ?2
+             WHERE id = ?3 AND status IN ('completed', 'interrupted')",
+            params![run_id, resumed_at, id],
+        )?;
+
+        tx.commit()?;
+        Ok(updated > 0)
+    }
+
+    pub fn begin_run_attempt(&self, id: &str, run_id: &str) -> Result<bool, DbError> {
+        let mut conn = self.conn.lock().map_err(|_| DbError::Lock)?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let updated = tx.execute(
+            "UPDATE sessions
+             SET status = 'running',
+                 active_run_id = ?1,
+                 failure_reason = NULL,
+                 updated_at = ?2,
+                 last_activity_at = ?2
+             WHERE id = ?3",
+            params![run_id, now, id],
+        )?;
+
+        tx.commit()?;
+        Ok(updated > 0)
+    }
+
+    pub fn get_session_run_metadata(&self, id: &str) -> Result<Option<SessionRunMetadata>, DbError> {
+        let conn = self.conn.lock().map_err(|_| DbError::Lock)?;
+
+        let mut stmt = conn.prepare(
+            "SELECT resume_count, active_run_id, last_resume_at
+             FROM sessions
+             WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query(params![id])?;
+
+        if let Some(row) = rows.next()? {
+            Ok(Some(SessionRunMetadata {
+                resume_count: row.get(0)?,
+                active_run_id: row.get(1)?,
+                last_resume_at: row.get(2)?,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn insert_session_message(

@@ -1,6 +1,6 @@
 use crate::db::{Database, Session, SessionDashboardRow, SessionMessage};
 use crate::session::projection::{normalize_failure_reason, project_dashboard_row, DashboardSessionProjection};
-use crate::session::{ClaudeCli, SessionManager, SessionSupervisor, WorktreeService};
+use crate::session::{ClaudeCli, SessionManager, SessionRuntime, SessionSupervisor, WorktreeService};
 use crate::session::{SessionEvent, SessionEventPayload};
 use serde_json::json;
 use std::collections::HashMap;
@@ -11,8 +11,9 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tokio::time::{sleep, Duration};
 
-const TERMINAL_STATUSES: [&str; 3] = ["completed", "failed", "killed"];
+const TERMINAL_STATUSES: [&str; 4] = ["completed", "failed", "killed", "interrupted"];
 
 #[derive(Clone, serde::Serialize)]
 struct SessionOutput {
@@ -141,6 +142,143 @@ async fn finalize_session_once(
     let _ = supervisor.remove(session_id).await;
 }
 
+async fn wait_for_runtime_exit(runtime: Arc<SessionRuntime>) -> std::io::Result<std::process::ExitStatus> {
+    loop {
+        {
+            let mut child = runtime.child.lock().await;
+            if let Some(status) = child.try_wait()? {
+                return Ok(status);
+            }
+        }
+
+        sleep(Duration::from_millis(50)).await;
+    }
+}
+
+fn launch_session_event_tasks(
+    app: AppHandle,
+    manager: Arc<Mutex<SessionManager>>,
+    session_id: String,
+    sequence: Arc<AtomicU64>,
+    runtime: Arc<SessionRuntime>,
+    mut event_rx: mpsc::Receiver<SessionEvent>,
+) {
+    let app_event = app.clone();
+    let session_id_for_events = session_id.clone();
+    let manager_for_events = manager.clone();
+    let seq_for_events = sequence.clone();
+
+    tokio::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            let frontend_event = to_frontend_session_event(&event);
+            let _ = app_event.emit("session-event", frontend_event);
+
+            match &event.payload {
+                SessionEventPayload::Message { content } => {
+                    let _ = app_event
+                        .state::<Database>()
+                        .update_last_activity(&event.session_id, &event.timestamp);
+                    let _ = app_event.state::<Database>().insert_session_message(
+                        &event.session_id,
+                        "assistant",
+                        content,
+                        &event.timestamp,
+                    );
+                    let _ = app_event.emit(
+                        "session-output",
+                        SessionOutput {
+                            session_id: event.session_id.clone(),
+                            line: content.clone(),
+                        },
+                    );
+                }
+                SessionEventPayload::Status { status } => {
+                    let _ = app_event
+                        .state::<Database>()
+                        .update_last_activity(&event.session_id, &event.timestamp);
+                    if is_terminal_status(status) {
+                        finalize_session_once(
+                            &app_event,
+                            &manager_for_events,
+                            &session_id_for_events,
+                            status,
+                            &seq_for_events,
+                            false,
+                            None,
+                        )
+                        .await;
+                    }
+                }
+                SessionEventPayload::Error { message } => {
+                    let _ = app_event
+                        .state::<Database>()
+                        .update_failure_reason(
+                            &event.session_id,
+                            normalize_failure_reason(Some(message)).as_deref(),
+                        );
+                    let _ = app_event.emit(
+                        "session-debug",
+                        json!({
+                            "session_id": event.session_id,
+                            "kind": "stderr",
+                            "timestamp": chrono::Utc::now().to_rfc3339(),
+                            "message": message,
+                        }),
+                    );
+                    let _ = app_event.emit("session-error", (&event.session_id, message));
+                }
+                _ => {}
+            }
+        }
+    });
+
+    let manager_for_wait = manager.clone();
+    let app_for_wait = app.clone();
+    let session_id_for_wait = session_id.clone();
+    let runtime_for_wait = runtime.clone();
+    let seq_for_wait = sequence.clone();
+
+    tokio::spawn(async move {
+        match wait_for_runtime_exit(runtime_for_wait.clone()).await {
+            Ok(exit_status) => {
+                let terminal = if runtime_for_wait.was_interrupt_requested() {
+                    "interrupted"
+                } else if runtime_for_wait.was_killed() {
+                    "killed"
+                } else if exit_status.success() {
+                    "completed"
+                } else {
+                    "failed"
+                };
+
+                finalize_session_once(
+                    &app_for_wait,
+                    &manager_for_wait,
+                    &session_id_for_wait,
+                    terminal,
+                    &seq_for_wait,
+                    true,
+                    None,
+                )
+                .await;
+            }
+            Err(e) => {
+                let message = format!("Failed waiting for session process: {}", e);
+                finalize_session_once(
+                    &app_for_wait,
+                    &manager_for_wait,
+                    &session_id_for_wait,
+                    "failed",
+                    &seq_for_wait,
+                    true,
+                    Some(message),
+                )
+                .await;
+            }
+        }
+    });
+}
+
 pub fn reconcile_sessions_on_startup(db: &Database) -> Result<(), String> {
     let stale_reason =
         "Session was still in progress at previous shutdown and was marked failed on restart";
@@ -223,6 +361,8 @@ pub async fn spawn_session(
         "--verbose".to_string(),
         "--output-format".to_string(),
         "stream-json".to_string(),
+        "--session-id".to_string(),
+        session_id.clone(),
     ];
 
     let now = chrono::Utc::now().to_rfc3339();
@@ -241,6 +381,10 @@ pub async fn spawn_session(
     db.update_worktree_path(&session_id, worktree_path_str.as_deref())
         .map_err(|e| format!("Failed to persist session worktree path: {}", e))?;
 
+    let run_id = uuid::Uuid::new_v4().to_string();
+    db.begin_run_attempt(&session_id, &run_id)
+        .map_err(|e| format!("Failed to persist session run metadata: {}", e))?;
+
     let _ = app.emit(
         "session-debug",
         json!({
@@ -256,7 +400,7 @@ pub async fn spawn_session(
 
     app.emit("session-started", &session_id).map_err(|e| e.to_string())?;
 
-    let (event_tx, mut event_rx) = mpsc::channel::<SessionEvent>(256);
+    let (event_tx, event_rx) = mpsc::channel::<SessionEvent>(256);
 
     let spawned = match cli
         .spawn_with_events(&prompt, &execution_dir, &session_id, event_tx)
@@ -279,8 +423,7 @@ pub async fn spawn_session(
         }
     };
 
-    let _ = db.update_session_status(&session_id, "running");
-    let _ = db.update_last_activity(&session_id, &chrono::Utc::now().to_rfc3339());
+    let _ = db.begin_run_attempt(&session_id, &run_id);
 
     let sequence = spawned.seq.clone();
     let supervisor = session_supervisor(manager.inner()).await;
@@ -288,123 +431,14 @@ pub async fn spawn_session(
         .register(session_id.clone(), name.clone(), spawned.child)
         .await;
 
-    let app_event = app.clone();
-    let session_id_for_events = session_id.clone();
-    let manager_for_events = manager.inner().clone();
-    let seq_for_events = sequence.clone();
-    tokio::spawn(async move {
-        while let Some(event) = event_rx.recv().await {
-            let frontend_event = to_frontend_session_event(&event);
-            let _ = app_event.emit("session-event", frontend_event);
-
-            match &event.payload {
-                SessionEventPayload::Message { content } => {
-                    let _ = app_event
-                        .state::<Database>()
-                        .update_last_activity(&event.session_id, &event.timestamp);
-                    let _ = app_event.state::<Database>().insert_session_message(
-                        &event.session_id,
-                        "assistant",
-                        content,
-                        &event.timestamp,
-                    );
-                    let _ = app_event.emit(
-                        "session-output",
-                        SessionOutput {
-                            session_id: event.session_id.clone(),
-                            line: content.clone(),
-                        },
-                    );
-                }
-                SessionEventPayload::Status { status } => {
-                    let _ = app_event
-                        .state::<Database>()
-                        .update_last_activity(&event.session_id, &event.timestamp);
-                    if is_terminal_status(status) {
-                        finalize_session_once(
-                            &app_event,
-                            &manager_for_events,
-                            &session_id_for_events,
-                            status,
-                            &seq_for_events,
-                            false,
-                            None,
-                        )
-                        .await;
-                    }
-                }
-                SessionEventPayload::Error { message } => {
-                    let _ = app_event
-                        .state::<Database>()
-                        .update_failure_reason(
-                            &event.session_id,
-                            normalize_failure_reason(Some(message)).as_deref(),
-                        );
-                    let _ = app_event.emit(
-                        "session-debug",
-                        json!({
-                            "session_id": event.session_id,
-                            "kind": "stderr",
-                            "timestamp": chrono::Utc::now().to_rfc3339(),
-                            "message": message,
-                        }),
-                    );
-                    let _ = app_event.emit("session-error", (&event.session_id, message));
-                }
-                _ => {}
-            }
-        }
-    });
-
-    let manager_clone = manager.inner().clone();
-    let app_clone = app.clone();
-    let session_id_clone = session_id.clone();
-    let runtime_for_wait = runtime.clone();
-    let seq_clone = sequence.clone();
-
-    tokio::spawn(async move {
-        let wait_result = {
-            let mut child = runtime_for_wait.child.lock().await;
-            child.wait().await
-        };
-
-        match wait_result {
-            Ok(exit_status) => {
-                let was_killed = runtime_for_wait.was_killed();
-                let terminal = if was_killed {
-                    "killed"
-                } else if exit_status.success() {
-                    "completed"
-                } else {
-                    "failed"
-                };
-
-                finalize_session_once(
-                    &app_clone,
-                    &manager_clone,
-                    &session_id_clone,
-                    terminal,
-                    &seq_clone,
-                    true,
-                    None,
-                )
-                .await;
-            }
-            Err(e) => {
-                let message = format!("Failed waiting for session process: {}", e);
-                finalize_session_once(
-                    &app_clone,
-                    &manager_clone,
-                    &session_id_clone,
-                    "failed",
-                    &seq_clone,
-                    true,
-                    Some(message),
-                )
-                .await;
-            }
-        }
-    });
+    launch_session_event_tasks(
+        app.clone(),
+        manager.inner().clone(),
+        session_id.clone(),
+        sequence,
+        runtime,
+        event_rx,
+    );
 
     Ok(session_id)
 }
@@ -534,6 +568,97 @@ pub async fn list_session_messages(
 ) -> Result<Vec<SessionMessage>, String> {
     db.list_session_messages(&id)
         .map_err(|e| format!("Failed to list session messages: {}", e))
+}
+
+#[tauri::command]
+pub async fn interrupt_session(
+    db: State<'_, Database>,
+    manager: State<'_, Arc<Mutex<SessionManager>>>,
+    id: String,
+) -> Result<(), String> {
+    let supervisor = session_supervisor(manager.inner()).await;
+    supervisor
+        .interrupt_session_with_deadline(db.inner(), &id, Duration::from_secs(10))
+        .await
+}
+
+#[tauri::command]
+pub async fn resume_session(
+    app: AppHandle,
+    db: State<'_, Database>,
+    manager: State<'_, Arc<Mutex<SessionManager>>>,
+    id: String,
+    prompt: String,
+    cli_path_override: Option<String>,
+) -> Result<(), String> {
+    let prompt = prompt.trim();
+    if prompt.is_empty() {
+        return Err("Resume prompt cannot be empty".to_string());
+    }
+
+    let session = db
+        .get_session(&id)
+        .map_err(|e| format!("Failed to load session for resume: {}", e))?
+        .ok_or_else(|| format!("Session {} not found", id))?;
+
+    if session.status != "completed" && session.status != "interrupted" {
+        return Err("Only completed or interrupted sessions can be resumed".to_string());
+    }
+
+    let supervisor = session_supervisor(manager.inner()).await;
+    let _gate = supervisor.acquire_lifecycle_operation(&id, "resume")?;
+
+    if supervisor.get(&id).await.is_some() {
+        return Err("Session runtime is already active".to_string());
+    }
+
+    let execution_dir = db
+        .get_session_worktree_path(&id)
+        .map_err(|e| format!("Failed to resolve session worktree path: {}", e))?
+        .unwrap_or_else(|| session.working_dir.clone());
+
+    let cli_override_path =
+        cli_path_override.filter(|value| !value.trim().is_empty()).map(PathBuf::from);
+    let cli = ClaudeCli::find_with_override(cli_override_path)?;
+
+    let resumed_at = chrono::Utc::now().to_rfc3339();
+    let run_id = uuid::Uuid::new_v4().to_string();
+    let resumed = db
+        .begin_resume_attempt(&id, &run_id, &resumed_at)
+        .map_err(|e| format!("Failed to persist resume metadata: {}", e))?;
+    if !resumed {
+        return Err("Session is no longer resumable".to_string());
+    }
+
+    let (event_tx, event_rx) = mpsc::channel::<SessionEvent>(256);
+    let spawned = match cli
+        .spawn_resume_with_events(prompt, &execution_dir, &id, event_tx)
+        .await
+    {
+        Ok(spawned) => spawned,
+        Err(err) => {
+            let _ = db.update_session_status(&id, &session.status);
+            let _ = db.update_failure_reason(&id, normalize_failure_reason(Some(&err)).as_deref());
+            return Err(err);
+        }
+    };
+
+    let _ = db.begin_run_attempt(&id, &run_id);
+
+    let runtime = supervisor
+        .register(id.clone(), session.name.clone(), spawned.child)
+        .await;
+
+    launch_session_event_tasks(
+        app,
+        manager.inner().clone(),
+        id,
+        spawned.seq,
+        runtime,
+        event_rx,
+    );
+
+    Ok(())
 }
 
 #[tauri::command]

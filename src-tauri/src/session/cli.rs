@@ -19,6 +19,12 @@ pub struct SpawnedSession {
     pub seq: Arc<AtomicU64>,
 }
 
+#[derive(Clone)]
+enum SpawnMode {
+    New { session_id: String },
+    Resume { session_id: String },
+}
+
 impl ClaudeCli {
     /// Find Claude CLI in PATH or common locations
     pub fn find() -> Option<Self> {
@@ -127,18 +133,57 @@ impl ClaudeCli {
         session_id: &str,
         tx: mpsc::Sender<SessionEvent>,
     ) -> Result<SpawnedSession, String> {
+        self.spawn_with_mode(
+            prompt,
+            working_dir,
+            session_id,
+            tx,
+            SpawnMode::New {
+                session_id: session_id.to_string(),
+            },
+        )
+        .await
+    }
+
+    pub async fn spawn_resume_with_events(
+        &self,
+        prompt: &str,
+        working_dir: &str,
+        session_id: &str,
+        tx: mpsc::Sender<SessionEvent>,
+    ) -> Result<SpawnedSession, String> {
+        self.spawn_with_mode(
+            prompt,
+            working_dir,
+            session_id,
+            tx,
+            SpawnMode::Resume {
+                session_id: session_id.to_string(),
+            },
+        )
+        .await
+    }
+
+    async fn spawn_with_mode(
+        &self,
+        prompt: &str,
+        working_dir: &str,
+        session_id: &str,
+        tx: mpsc::Sender<SessionEvent>,
+        mode: SpawnMode,
+    ) -> Result<SpawnedSession, String> {
         self.ensure_compatible().await?;
 
-        let mut child = Command::new(&self.path)
-            .arg("-p")
-            .arg(prompt)
-            .arg("--verbose")
-            .arg("--output-format")
-            .arg("stream-json")
+        let args = compose_spawn_args(prompt, &mode);
+        let mut command = Command::new(&self.path);
+        command
+            .args(&args)
             .current_dir(working_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .stdin(Stdio::null())
+            .stdin(Stdio::null());
+
+        let mut child = command
             .spawn()
             .map_err(|e| format!("Failed to spawn: {}", e))?;
 
@@ -269,6 +314,29 @@ fn parse_semver(raw: &str) -> Option<(u64, u64, u64)> {
     }
 
     None
+}
+
+fn compose_spawn_args(prompt: &str, mode: &SpawnMode) -> Vec<String> {
+    let mut args = vec![
+        "-p".to_string(),
+        prompt.to_string(),
+        "--verbose".to_string(),
+        "--output-format".to_string(),
+        "stream-json".to_string(),
+    ];
+
+    match mode {
+        SpawnMode::New { session_id } => {
+            args.push("--session-id".to_string());
+            args.push(session_id.clone());
+        }
+        SpawnMode::Resume { session_id } => {
+            args.push("--resume".to_string());
+            args.push(session_id.clone());
+        }
+    }
+
+    args
 }
 
 fn try_send_with_overflow(
@@ -494,5 +562,36 @@ fn canonical_status(status: &str) -> String {
         "done" | "complete" => "completed".to_string(),
         "error" => "failed".to_string(),
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{compose_spawn_args, SpawnMode};
+
+    #[test]
+    fn compose_spawn_args_sets_deterministic_identity_for_new_runs() {
+        let args = compose_spawn_args(
+            "prompt",
+            &SpawnMode::New {
+                session_id: "session-1".to_string(),
+            },
+        );
+
+        assert!(args.windows(2).any(|w| w == ["--session-id", "session-1"]));
+        assert!(!args.iter().any(|arg| arg == "--resume"));
+    }
+
+    #[test]
+    fn compose_spawn_args_uses_native_resume_flag_for_resume_runs() {
+        let args = compose_spawn_args(
+            "prompt",
+            &SpawnMode::Resume {
+                session_id: "session-2".to_string(),
+            },
+        );
+
+        assert!(args.windows(2).any(|w| w == ["--resume", "session-2"]));
+        assert!(!args.iter().any(|arg| arg == "--session-id"));
     }
 }
