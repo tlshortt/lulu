@@ -6,6 +6,7 @@ import type {
   DashboardStatus,
   SessionDebugEvent,
   SessionEvent,
+  SessionOperationStatus,
 } from "$lib/types/session";
 
 export interface Session {
@@ -33,6 +34,10 @@ export interface SessionDebugState {
 }
 
 export const sessionDebug = writable<Record<string, SessionDebugState>>({});
+export const sessionOperations = writable<
+  Record<string, SessionOperationStatus>
+>({});
+export const sessionErrors = writable<Record<string, string>>({});
 
 type MessageBuffers = Record<string, string>;
 interface StoredSessionMessage {
@@ -54,7 +59,6 @@ const FAILURE_STATUSES = new Set([
   "failed",
   "killed",
   "error",
-  "interrupted",
   "cancelled",
   "canceled",
   "crashed",
@@ -138,6 +142,10 @@ const normalizeStatus = (status: string) => {
 
 const toDashboardStatus = (status: string): DashboardStatus => {
   const normalized = normalizeStatus(status);
+
+  if (normalized === "interrupted") {
+    return "Interrupted";
+  }
 
   if (normalized === "running") {
     return "Running";
@@ -303,6 +311,45 @@ const updateSessionStatus = (
   );
 };
 
+const withSessionRecord = <T>(
+  store: {
+    update: (fn: (items: Record<string, T>) => Record<string, T>) => void;
+  },
+  sessionId: string,
+  value: T | null,
+) => {
+  store.update((items) => {
+    if (value === null) {
+      if (!(sessionId in items)) {
+        return items;
+      }
+
+      const next = { ...items };
+      delete next[sessionId];
+      return next;
+    }
+
+    return {
+      ...items,
+      [sessionId]: value,
+    };
+  });
+};
+
+const setSessionOperation = (
+  sessionId: string,
+  operation: SessionOperationStatus | null,
+) => {
+  withSessionRecord(sessionOperations, sessionId, operation);
+};
+
+const setSessionError = (sessionId: string, message: string | null) => {
+  withSessionRecord(sessionErrors, sessionId, message);
+};
+
+const isSessionOperationActive = (sessionId: string) =>
+  Boolean(get(sessionOperations)[sessionId]);
+
 function addEvent(sessionId: string, event: SessionEvent) {
   sessionEvents.update((events) => {
     const current = events[sessionId] ?? [];
@@ -445,6 +492,8 @@ export function resetSessionEventStateForTests() {
   loadedSessionHistory.clear();
   sessionEvents.set({});
   sessionDebug.set({});
+  sessionOperations.set({});
+  sessionErrors.set({});
   sequenceCounter = 0;
   listenerInitialized = false;
   listenerInitializing = false;
@@ -661,6 +710,8 @@ export async function removeSession(sessionId: string, status: string) {
   }
 
   await invoke("delete_session", { id: sessionId });
+  setSessionOperation(sessionId, null);
+  setSessionError(sessionId, null);
   removeSessionLocal(sessionId);
 }
 
@@ -682,6 +733,61 @@ export async function renameSession(sessionId: string, name: string) {
         : item,
     ),
   );
+}
+
+export async function interruptSession(sessionId: string) {
+  if (isSessionOperationActive(sessionId)) {
+    throw new Error("Session operation already in progress.");
+  }
+
+  setSessionError(sessionId, null);
+  setSessionOperation(sessionId, "interrupting");
+  updateSessionStatus(sessionId, "interrupting", createTimestamp());
+
+  try {
+    await invoke("interrupt_session", { id: sessionId });
+    setSessionError(sessionId, null);
+    await loadSessions();
+  } catch (error) {
+    const message = toErrorMessage(error, "Failed to interrupt session.");
+    setSessionError(sessionId, message);
+    await loadSessions();
+    throw new Error(message);
+  } finally {
+    setSessionOperation(sessionId, null);
+  }
+}
+
+export async function resumeSession(sessionId: string, prompt: string) {
+  if (isSessionOperationActive(sessionId)) {
+    throw new Error("Session operation already in progress.");
+  }
+
+  const nextPrompt = prompt.trim();
+  if (!nextPrompt) {
+    throw new Error("Resume prompt cannot be empty.");
+  }
+
+  setSessionError(sessionId, null);
+  setSessionOperation(sessionId, "resuming");
+  updateSessionStatus(sessionId, "resuming", createTimestamp());
+
+  try {
+    await invoke("resume_session", {
+      id: sessionId,
+      prompt: nextPrompt,
+      cliPathOverride: loadString("lulu:cli-path-override", "") || null,
+    });
+    setSessionError(sessionId, null);
+    await loadSessions();
+  } catch (error) {
+    const message = toErrorMessage(error, "Failed to resume session.");
+    setSessionError(sessionId, message);
+    await loadSessions();
+    throw new Error(message);
+  } finally {
+    setSessionOperation(sessionId, null);
+  }
 }
 
 export async function initSessionListeners() {
