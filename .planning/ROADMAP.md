@@ -68,13 +68,14 @@ Plans:
   3. User can click into any session to view its live output stream
   4. Each session runs in isolated git worktree to prevent conflicts
   5. One crashed session does not affect other running sessions
-**Plans**: 4 plans
+**Plans**: 5 plans
 
 Plans:
 - [ ] 03-01-PLAN.md — Backend worktree isolation + locked status projection + startup reconciliation
 - [ ] 03-02-PLAN.md — SessionSupervisor parallel runtime isolation + mixed-outcome integration coverage
 - [ ] 03-03-PLAN.md — Locked dashboard list behavior, interactions, and regression protection
 - [ ] 03-04-PLAN.md — Gap closure: projection runtime wiring + supervisor terminal ownership
+- [ ] 03-05-PLAN.md — Gap closure: startup render readiness gate + no-blink regression coverage
 
 ### Phase 4: Security & Approval System
 **Goal**: User controls tool execution through approval prompts with pattern-based auto-approve rules
@@ -133,7 +134,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Foundation & Architecture | 8/8 | Complete | 2026-02-15 |
 | 2. Single Session Core | 2/2 | Complete | 2026-02-15 |
-| 3. Multi-Session Orchestration | 0/4 | Not started | - |
+| 3. Multi-Session Orchestration | 0/5 | Not started | - |
 | 4. Security & Approval System | 0/3 | Not started | - |
 | 5. Session Lifecycle Control | 0/2 | Not started | - |
 | 6. Persistence & History | 0/2 | Not started | - |
