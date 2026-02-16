@@ -3,12 +3,10 @@
   import MainArea from "$lib/components/MainArea.svelte";
   import NewSessionModal from "$lib/components/NewSessionModal.svelte";
   import {
+    bootstrapInitialSessions,
+    beginInitialSessionsHydration,
     initSessionListeners,
-    initialSessionsLoadError,
-    initialSessionsHydrated,
-    loadSessionsWithRetry,
   } from "$lib/stores/sessions";
-  import { get } from "svelte/store";
   import { onMount } from "svelte";
 
   const SIDEBAR_STORAGE_KEY = "lulu:sidebar-width";
@@ -19,8 +17,7 @@
   let sidebarWidth = $state(SIDEBAR_DEFAULT_WIDTH);
   let resizingSidebar = $state(false);
 
-  initialSessionsHydrated.set(false);
-  initialSessionsLoadError.set(null);
+  beginInitialSessionsHydration();
 
   const canUseStorage = () => typeof window !== "undefined";
 
@@ -70,21 +67,10 @@
   onMount(() => {
     sidebarWidth = loadSidebarWidth();
 
-    const hydrationTimeout = window.setTimeout(() => {
-      if (get(initialSessionsHydrated)) {
-        return;
-      }
-
-      initialSessionsLoadError.set(
-        "Session load timed out. You can still start a new session.",
-      );
-      initialSessionsHydrated.set(true);
-    }, 5000);
-
-    void initSessionListeners().catch((error) => {
+    void initSessionListeners().catch((error: unknown) => {
       console.error("Failed to initialize session listeners", error);
     });
-    void loadSessionsWithRetry().catch((error) => {
+    void bootstrapInitialSessions().catch((error: unknown) => {
       console.error("Failed to load sessions", error);
     });
 
@@ -139,7 +125,6 @@
     window.addEventListener("keydown", handleShortcut);
 
     return () => {
-      window.clearTimeout(hydrationTimeout);
       window.removeEventListener("keydown", handleShortcut);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);

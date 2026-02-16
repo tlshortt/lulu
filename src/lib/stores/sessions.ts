@@ -279,6 +279,18 @@ const toErrorMessage = (value: unknown, fallback: string) => {
   return fallback;
 };
 
+export const beginInitialSessionsHydration = () => {
+  initialSessionsHydrated.set(false);
+  initialSessionsLoadError.set(null);
+};
+
+export const completeInitialSessionsHydration = (
+  error: string | null = null,
+) => {
+  initialSessionsLoadError.set(error);
+  initialSessionsHydrated.set(true);
+};
+
 const updateSessionStatus = (
   sessionId: string,
   status: string,
@@ -482,7 +494,6 @@ function routeSessionDebugEvent(event: SessionDebugEvent) {
 }
 
 export async function loadSessions() {
-  initialSessionsLoadError.set(null);
   const data = await invokeWithTimeout<Session[]>(
     "list_sessions",
     undefined,
@@ -493,12 +504,25 @@ export async function loadSessions() {
   dashboardSelectedSessionId.update(
     (current) => current ?? data[0]?.id ?? null,
   );
-  initialSessionsHydrated.set(true);
 
   for (const session of data) {
     if (normalizeStatus(session.status) !== "running") {
       void loadSessionHistory(session.id);
     }
+  }
+}
+
+export async function bootstrapInitialSessions() {
+  beginInitialSessionsHydration();
+
+  try {
+    await loadSessionsWithRetry();
+    completeInitialSessionsHydration();
+  } catch (error) {
+    completeInitialSessionsHydration(
+      toErrorMessage(error, "Failed to load sessions."),
+    );
+    throw error;
   }
 }
 
@@ -568,10 +592,6 @@ export async function loadSessionsWithRetry(attempts = 5, delayMs = 150) {
     }
   }
 
-  initialSessionsLoadError.set(
-    toErrorMessage(lastError, "Failed to load sessions."),
-  );
-  initialSessionsHydrated.set(true);
   throw lastError;
 }
 
