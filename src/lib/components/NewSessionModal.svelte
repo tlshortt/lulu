@@ -14,8 +14,8 @@
 
   const resetForm = () => {
     name = "";
+    prompt = "";
     workingDir = "~";
-    workingDir = "/Users/timothyshortt/";
     error = null;
   };
 
@@ -149,7 +149,7 @@
           <input
             class="mt-2 w-full rounded-md border border-border bg-background/40 px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
             bind:value={workingDir}
-            placeholder="/Users/you/workspace/project"
+            placeholder="~/workspace/project"
             autocomplete="off"
             onkeydown={handleFormKeydown}
           />

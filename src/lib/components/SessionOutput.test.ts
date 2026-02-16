@@ -159,7 +159,7 @@ describe("SessionOutput", () => {
     setSessionState([]);
     sessionDebug.set({
       [sessionId]: {
-        cliPath: "/Users/timothyshortt/.local/bin/claude",
+        cliPath: "/home/user/.local/bin/claude",
         args: [
           "-p",
           "<prompt redacted>",
@@ -180,9 +180,7 @@ describe("SessionOutput", () => {
 
     await fireEvent.click(screen.getByText("Debug: spawn args + stderr tail"));
 
-    expect(
-      screen.getByText("/Users/timothyshortt/.local/bin/claude"),
-    ).toBeTruthy();
+    expect(screen.getByText("/home/user/.local/bin/claude")).toBeTruthy();
     expect(screen.getByText(/--output-format stream-json/)).toBeTruthy();
     expect(screen.getByText(/sample stderr line 1/)).toBeTruthy();
   });
