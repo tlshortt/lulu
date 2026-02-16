@@ -2,7 +2,7 @@
 
 ## Overview
 
-Lulu delivers a native desktop dashboard for orchestrating multiple Claude Code sessions in parallel. This roadmap moves from foundational architecture (Tauri + Svelte + cc-sdk integration) through single-session implementation, to multi-session orchestration with approvals, lifecycle control, and persistence. The journey culminates in a production-ready "mission control" for parallel AI-assisted development.
+Lulu delivers a native desktop dashboard for orchestrating multiple Claude Code sessions in parallel. This roadmap moves from foundational architecture (Tauri + Svelte + cc-sdk integration) through single-session implementation, to multi-session orchestration, lifecycle control, and persistence. The journey culminates in a production-ready "mission control" for parallel AI-assisted development.
 
 ## Phases
 
@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Foundation & Architecture** - Tauri + Svelte + cc-sdk project scaffold with database layer
 - [x] **Phase 2: Single Session Core** - One working Claude Code session with streaming output
 - [x] **Phase 3: Multi-Session Orchestration** - Parallel sessions with dashboard and git worktree integration
-- [ ] **Phase 4: Security & Approval System** - Tool approval prompts with auto-approve rules engine
+- [x] **Phase 4: Security & Approval System (Scrapped)** - Removed from active scope
 - [ ] **Phase 5: Session Lifecycle Control** - Interrupt and resume capabilities with error isolation
 - [ ] **Phase 6: Persistence & History** - Session persistence across restarts and history review
 
@@ -78,25 +78,19 @@ Plans:
 - [x] 03-05-PLAN.md — Gap closure: startup render readiness gate + no-blink regression coverage
 
 ### Phase 4: Security & Approval System
-**Goal**: User controls tool execution through approval prompts with pattern-based auto-approve rules
+**Goal**: [Removed from active scope]
 **Depends on**: Phase 3
-**Requirements**: APPR-01, APPR-02, APPR-03, APPR-04
+**Requirements**: APPR-01, APPR-02, APPR-03, APPR-04 (deferred/out of scope)
 **Success Criteria** (what must be TRUE):
-  1. User sees approval prompt when session attempts tool call not covered by auto-approve rules
-  2. User can approve or reject pending tool calls from the UI
-  3. User can define auto-approve rules using pattern matching (exact, prefix, wildcard)
-  4. Tools matching auto-approve rules execute immediately without manual prompt
-  5. Session status shows "waiting for approval" when blocked on user decision
-**Plans**: TBD
+  1. N/A (phase removed from current delivery scope)
+**Plans**: 0 (cancelled)
 
 Plans:
-- [ ] 04-01-PLAN.md — TBD
-- [ ] 04-02-PLAN.md — TBD
-- [ ] 04-03-PLAN.md — TBD
+- [x] None — phase intentionally skipped
 
 ### Phase 5: Session Lifecycle Control
 **Goal**: User can interrupt running sessions and resume completed sessions with new prompts
-**Depends on**: Phase 4
+**Depends on**: Phase 3
 **Requirements**: LIFE-01, LIFE-02, LIFE-04
 **Success Criteria** (what must be TRUE):
   1. User can interrupt a running session mid-execution
@@ -135,9 +129,9 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Foundation & Architecture | 8/8 | Complete | 2026-02-15 |
 | 2. Single Session Core | 2/2 | Complete | 2026-02-15 |
 | 3. Multi-Session Orchestration | 5/5 | Complete | 2026-02-16 |
-| 4. Security & Approval System | 0/3 | Not started | - |
+| 4. Security & Approval System | 0/0 | Scrapped | 2026-02-16 |
 | 5. Session Lifecycle Control | 0/2 | Not started | - |
 | 6. Persistence & History | 0/2 | Not started | - |
 
 ---
-*Last updated: 2026-02-16 after Phase 3 execution and verification pass*
+*Last updated: 2026-02-16 after Phase 4 scope removal and dependency realignment*

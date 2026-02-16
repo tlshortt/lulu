@@ -5,22 +5,22 @@
 See: .planning/PROJECT.md (updated 2026-02-14)
 
 **Core value:** Run and monitor multiple Claude Code instances simultaneously from a single dashboard
-**Current focus:** Phase 3 - Multi-Session Orchestration
+**Current focus:** Phase 5 - Session Lifecycle Control (Phase 4 scrapped)
 
 ## Current Position
 
-**Current Phase:** 3
-**Current Phase Name:** Multi-Session Orchestration
+**Current Phase:** 5
+**Current Phase Name:** Session Lifecycle Control
 **Total Phases:** 6
-**Current Plan:** 5
-**Total Plans in Phase:** 5
-**Status:** Phase complete — ready for verification
+**Current Plan:** 0
+**Total Plans in Phase:** 2
+**Status:** Ready for planning — Phase 4 removed from active scope
 **Last Activity:** 2026-02-16
 
-Phase: 3 of 6 (Multi-Session Orchestration)
-Plan: 5 of 5 (complete)
-Status: Phase 3 complete (Multi-Session Orchestration)
-Last activity: 2026-02-16 — Executed 03-05 gap closure and verified Phase 3 passed (6/6)
+Phase: 5 of 6 (Session Lifecycle Control)
+Plan: 0 of 2 (not started)
+Status: Ready to plan Phase 5; Phase 4 intentionally scrapped
+Last activity: 2026-02-16 — Rolled codebase back to post-Phase-3 commit and removed Phase 4 scope
 
 **Progress:** [██████████] 100%
 
@@ -80,10 +80,12 @@ Recent decisions affecting current work:
 - [Phase 03]: SessionSupervisor owns terminal persistence and canonical session-event status emission; commands orchestrate only.
 - [Phase 03]: Move initial hydration readiness transitions behind explicit store APIs (begin/complete)
 - [Phase 03]: Remove timeout-based readiness flip and complete startup gating only when bootstrap settles
+- [Roadmap]: Scrap Phase 4 approval system from active scope and defer APPR-01..APPR-04.
+- [Roadmap]: Realign dependencies so Phase 5 now depends on Phase 3.
 
 ### Pending Todos
 
-None yet.
+- Plan Phase 5 with updated dependency chain (Phase 3 -> Phase 5 -> Phase 6).
 
 ### Blockers/Concerns
 
@@ -103,4 +105,4 @@ Stopped At: Session resumed, proceeding to execute 03-05-PLAN gap closure
 Resume File: None
 
 ---
-*Last updated: 2026-02-16 after Phase 3 gaps-only execution + verification pass*
+*Last updated: 2026-02-16 after Phase 4 scope removal and Phase 5 focus handoff*
