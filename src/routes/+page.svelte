@@ -4,6 +4,7 @@
   import NewSessionModal from "$lib/components/NewSessionModal.svelte";
   import {
     initSessionListeners,
+    initialSessionsHydrated,
     loadSessionsWithRetry,
   } from "$lib/stores/sessions";
   import { onMount } from "svelte";
@@ -15,6 +16,8 @@
   let newSessionOpen = $state(false);
   let sidebarWidth = $state(SIDEBAR_DEFAULT_WIDTH);
   let resizingSidebar = $state(false);
+
+  initialSessionsHydrated.set(false);
 
   const canUseStorage = () => typeof window !== "undefined";
 

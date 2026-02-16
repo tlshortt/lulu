@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { Button } from "$lib/components/ui/button";
   import {
     activeSessionId,
@@ -7,9 +8,11 @@
     dashboardSelectedSessionId,
     initialSessionsHydrated,
     loadSessionHistory,
+    renameSession,
     removeSession,
     sessions,
   } from "$lib/stores/sessions";
+  import type { Session } from "$lib/stores/sessions";
   import type { DashboardStatus } from "$lib/types/session";
 
   const { onNewSession = () => {} } = $props<{ onNewSession?: () => void }>();
@@ -76,6 +79,48 @@
   const rawStatusesBySessionId = $derived(
     new Map($sessions.map((session) => [session.id, session.status])),
   );
+
+  const sessionsById = $derived(
+    new Map($sessions.map((session) => [session.id, session])),
+  );
+
+  let editingSessionId = $state<string | null>(null);
+  let editingName = $state("");
+  let renameInput = $state<HTMLInputElement | null>(null);
+
+  const startRename = (session: Session) => {
+    editingSessionId = session.id;
+    editingName = session.name;
+    void tick().then(() => {
+      renameInput?.focus();
+      renameInput?.select();
+    });
+  };
+
+  const cancelRename = () => {
+    editingSessionId = null;
+    editingName = "";
+  };
+
+  const commitRename = async (session: Session) => {
+    if (editingSessionId !== session.id) {
+      return;
+    }
+
+    const nextName = editingName.trim();
+    if (!nextName || nextName === session.name) {
+      cancelRename();
+      return;
+    }
+
+    try {
+      await renameSession(session.id, nextName);
+    } catch (error) {
+      console.error("Failed to rename session", error);
+    } finally {
+      cancelRename();
+    }
+  };
 </script>
 
 <aside
@@ -139,7 +184,39 @@
                 type="button"
               >
                 <span class="flex items-center justify-between gap-3">
-                  <span class="truncate font-medium">{row.name}</span>
+                  {#if editingSessionId === row.id}
+                    <input
+                      bind:this={renameInput}
+                      class="w-full rounded border border-border bg-background/55 px-1.5 py-1 text-sm font-medium text-foreground outline-none focus:border-ring"
+                      bind:value={editingName}
+                      aria-label="Rename session"
+                      onblur={() => {
+                        const session = sessionsById.get(row.id);
+                        if (session) {
+                          void commitRename(session);
+                        }
+                      }}
+                      onkeydown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          const session = sessionsById.get(row.id);
+                          if (session) {
+                            void commitRename(session);
+                          }
+                        }
+
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          cancelRename();
+                        }
+
+                        event.stopPropagation();
+                      }}
+                      onclick={(event) => event.stopPropagation()}
+                    />
+                  {:else}
+                    <span class="truncate font-medium">{row.name}</span>
+                  {/if}
                   <span class="shrink-0 text-xs text-foreground/45"
                     >{row.recentActivity}</span
                   >
@@ -164,6 +241,21 @@
                   {/if}
                 </span>
               </button>
+              {#if editingSessionId !== row.id}
+                <button
+                  class="absolute right-7 top-2 rounded px-1 text-xs text-foreground/40 transition hover:text-foreground"
+                  aria-label={`Rename ${row.name}`}
+                  title="Rename"
+                  type="button"
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    const session = sessionsById.get(row.id);
+                    if (session) {
+                      startRename(session);
+                    }
+                  }}>✎</button
+                >
+              {/if}
               <button
                 class="absolute right-2 top-2 rounded px-1 text-xs text-foreground/40 transition hover:text-destructive"
                 aria-label={rawStatusesBySessionId.get(row.id) === "running"

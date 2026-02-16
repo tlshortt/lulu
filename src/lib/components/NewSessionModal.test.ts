@@ -60,6 +60,36 @@ describe("NewSessionModal", () => {
     });
   });
 
+  it("shows backend string errors when session start fails", async () => {
+    spawnSessionMock.mockRejectedValue(
+      "Working directory does not exist: /tmp/missing",
+    );
+
+    render(NewSessionModal, {
+      props: { open: true, onClose: vi.fn() },
+    });
+
+    await fireEvent.input(screen.getByLabelText("Session name"), {
+      target: { value: "test 1" },
+    });
+    await fireEvent.input(screen.getByLabelText("Prompt"), {
+      target: { value: "summarize .zshrc" },
+    });
+    await fireEvent.input(screen.getByLabelText("Working directory"), {
+      target: { value: "/tmp/missing" },
+    });
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Working directory does not exist: /tmp/missing"),
+      ).toBeTruthy();
+    });
+  });
+
   it("calls spawnSession exactly once while submitting", async () => {
     spawnSessionMock.mockImplementation(
       () => new Promise<string>(() => undefined),

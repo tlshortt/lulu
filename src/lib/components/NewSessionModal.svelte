@@ -60,7 +60,11 @@
       onClose();
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to start session.";
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : "Failed to start session.";
       error = message;
     } finally {
       isSubmitting = false;

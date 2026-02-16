@@ -31,6 +31,7 @@ vi.mock("$lib/stores/sessions", async () => {
       },
     ]),
     loadSessionHistory: vi.fn(async () => {}),
+    renameSession: vi.fn(async () => {}),
     removeSession: vi.fn(async () => {}),
   };
 });
@@ -221,5 +222,24 @@ describe("Sidebar dashboard interactions", () => {
 
     expect(screen.getByText("Loading sessions...")).toBeTruthy();
     expect(screen.queryByText("Build dashboard")).toBeNull();
+  });
+
+  it("renames a session from the row action", async () => {
+    render(Sidebar);
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Rename Build dashboard" }),
+    );
+
+    const input = screen.getByLabelText("Rename session");
+    await fireEvent.input(input, { target: { value: "  Updated name  " } });
+    await fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(sessionStores.renameSession).toHaveBeenCalledWith(
+        "session-1",
+        "Updated name",
+      );
+    });
   });
 });
