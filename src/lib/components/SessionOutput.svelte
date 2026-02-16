@@ -182,7 +182,7 @@
             <div>
               <span class="font-semibold text-foreground/65">Args:</span>
               <pre
-                class="mt-1 whitespace-pre-wrap rounded border border-border/50 bg-background/45 px-2 py-1 font-mono">{(
+                class="mt-1 whitespace-pre-wrap break-words rounded border border-border/50 bg-background/45 px-2 py-1 font-mono">{(
                   debug.args ?? []
                 ).join(" ") || "(none)"}</pre>
             </div>
@@ -192,7 +192,7 @@
                 <div class="mt-1 text-foreground/50">No stderr output yet.</div>
               {:else}
                 <pre
-                  class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded border border-border/50 bg-background/45 px-2 py-1 font-mono">{debug.stderrTail.join(
+                  class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded border border-border/50 bg-background/45 px-2 py-1 font-mono">{debug.stderrTail.join(
                     "\n",
                   )}</pre>
               {/if}
@@ -228,7 +228,8 @@
             <div
               class="rounded-lg border border-border/70 bg-background/45 px-4 py-3 text-sm text-foreground/85"
             >
-              <pre class="whitespace-pre-wrap">{item.value.data.content}</pre>
+              <pre class="whitespace-pre-wrap break-words">{item.value.data
+                  .content}</pre>
             </div>
           {:else if item.value.type === "thinking"}
             <div
@@ -250,7 +251,7 @@
             <div
               class="rounded-lg border border-border/60 bg-background/30 px-4 py-3 text-xs text-foreground/65"
             >
-              <pre class="whitespace-pre-wrap">{JSON.stringify(
+              <pre class="whitespace-pre-wrap break-words">{JSON.stringify(
                   item.value.data.result,
                   null,
                   2,
