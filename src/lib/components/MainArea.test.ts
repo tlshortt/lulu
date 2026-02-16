@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   activeSessionId,
@@ -95,5 +96,19 @@ describe("MainArea", () => {
 
     expect(screen.getByText("No active sessions")).toBeTruthy();
     expect(screen.getByText("Failed to load sessions.")).toBeTruthy();
+  });
+
+  it("lands on startup view after hydration completes with empty snapshot", async () => {
+    initialSessionsHydrated.set(false);
+
+    render(MainArea);
+
+    expect(screen.getByText("Loading sessions...")).toBeTruthy();
+
+    initialSessionsHydrated.set(true);
+    await tick();
+
+    expect(screen.queryByText("Loading sessions...")).toBeNull();
+    expect(screen.getByText("No active sessions")).toBeTruthy();
   });
 });

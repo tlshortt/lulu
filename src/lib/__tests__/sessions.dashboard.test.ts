@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { get } from "svelte/store";
 
 const { listenMock, invokeMock } = vi.hoisted(() => ({
   listenMock: vi.fn(async () => () => {}),
@@ -24,7 +25,10 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import {
+  bootstrapInitialSessions,
   dashboardRows,
+  initialSessionsHydrated,
+  initialSessionsLoadError,
   refreshDashboardNowForTests,
   resetSessionEventStateForTests,
   routeSessionEvent,
@@ -190,5 +194,56 @@ describe("sessions dashboard projection", () => {
     });
 
     expect(readDashboardRows()[0]?.status).toBe("Completed");
+  });
+
+  it("keeps startup hydration false until bootstrap settles", async () => {
+    let resolveListSessions: ((value: unknown) => void) | undefined;
+
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "list_sessions") {
+        return new Promise((resolve) => {
+          resolveListSessions = resolve;
+        });
+      }
+
+      if (command === "list_session_messages") {
+        return Promise.resolve([]);
+      }
+
+      return Promise.resolve(null);
+    });
+
+    const bootstrap = bootstrapInitialSessions();
+    await Promise.resolve();
+
+    expect(get(initialSessionsHydrated)).toBe(false);
+
+    resolveListSessions?.([]);
+    await bootstrap;
+
+    expect(get(initialSessionsHydrated)).toBe(true);
+    expect(get(initialSessionsLoadError)).toBeNull();
+    expect(readDashboardRows()).toHaveLength(0);
+  });
+
+  it("marks startup hydration complete with error after retries fail", async () => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "list_sessions") {
+        return Promise.reject(new Error("Backend unavailable"));
+      }
+
+      if (command === "list_session_messages") {
+        return Promise.resolve([]);
+      }
+
+      return Promise.resolve(null);
+    });
+
+    await expect(bootstrapInitialSessions()).rejects.toThrow(
+      "Backend unavailable",
+    );
+
+    expect(get(initialSessionsHydrated)).toBe(true);
+    expect(get(initialSessionsLoadError)).toBe("Backend unavailable");
   });
 });
