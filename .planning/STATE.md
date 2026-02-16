@@ -9,12 +9,20 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
+**Current Phase:** 3
+**Current Phase Name:** Multi-Session Orchestration
+**Total Phases:** 6
+**Current Plan:** 5
+**Total Plans in Phase:** 5
+**Status:** Phase complete — ready for verification
+**Last Activity:** 2026-02-16
+
 Phase: 3 of 6 (Multi-Session Orchestration)
 Plan: 4 of 4 (complete)
 Status: Phase 3 complete (Multi-Session Orchestration)
 Last activity: 2026-02-16 — Re-verified Phase 3 startup render stability gap closure (23/23)
 
-Progress: [██████████] 100%
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 
@@ -36,6 +44,7 @@ Progress: [██████████] 100%
 | Phase 03 P02 | 3 min | 2 tasks | 6 files |
 | Phase 03 P03 | 6 min | 3 tasks | 7 files |
 | Phase 03 P04 | 4 min | 3 tasks | 5 files |
+| Phase 03 P05 | 2 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -69,6 +78,8 @@ Recent decisions affecting current work:
 - [Phase 03]: Render compact right-aligned activity age labels (s/m/h/d) from session updated timestamps.
 - [Phase 03]: Expose projected dashboard rows through list_dashboard_sessions so projection.rs remains a runtime boundary.
 - [Phase 03]: SessionSupervisor owns terminal persistence and canonical session-event status emission; commands orchestrate only.
+- [Phase 03]: Move initial hydration readiness transitions behind explicit store APIs (begin/complete)
+- [Phase 03]: Remove timeout-based readiness flip and complete startup gating only when bootstrap settles
 
 ### Pending Todos
 
@@ -82,6 +93,10 @@ None yet.
 - Must address 6 critical pitfalls during foundation: SQLite concurrency, bounded channels, IPC blocking, process zombies, cc-sdk API stability, client isolation
 
 ## Session Continuity
+
+**Last session:** 2026-02-16T02:32:57.688Z
+**Stopped At:** Completed 03-05-PLAN.md
+**Resume File:** None
 
 Last Session: 2026-02-15 (resumed)
 Stopped At: Session resumed, proceeding to execute 03-05-PLAN gap closure
