@@ -21,6 +21,7 @@ export const sessions = writable<Session[]>([]);
 export const activeSessionId = writable<string | null>(null);
 export const selectedSessionId = activeSessionId;
 export const dashboardSelectedSessionId = writable<string | null>(null);
+export const initialSessionsHydrated = writable(false);
 export const sessionEvents = writable<Record<string, SessionEvent[]>>({});
 export interface SessionDebugState {
   cliPath?: string;
@@ -399,6 +400,7 @@ export function resetSessionEventStateForTests() {
   sequenceCounter = 0;
   listenerInitialized = false;
   listenerInitializing = false;
+  initialSessionsHydrated.set(false);
   dashboardNow.set(Date.now());
 }
 
@@ -449,6 +451,7 @@ export async function loadSessions() {
   dashboardSelectedSessionId.update(
     (current) => current ?? data[0]?.id ?? null,
   );
+  initialSessionsHydrated.set(true);
 
   for (const session of data) {
     if (normalizeStatus(session.status) !== "running") {
@@ -514,6 +517,7 @@ export async function loadSessionsWithRetry(attempts = 5, delayMs = 150) {
     }
   }
 
+  initialSessionsHydrated.set(true);
   throw lastError;
 }
 

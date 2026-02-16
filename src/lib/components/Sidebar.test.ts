@@ -9,6 +9,7 @@ vi.mock("$lib/stores/sessions", async () => {
   return {
     activeSessionId: writable<string | null>(null),
     dashboardSelectedSessionId: writable<string | null>(null),
+    initialSessionsHydrated: writable(true),
     cliPathOverride: writable(""),
     sessions: writable([
       {
@@ -73,6 +74,7 @@ describe("Sidebar dashboard interactions", () => {
     ]);
     sessionStores.activeSessionId.set(null);
     sessionStores.dashboardSelectedSessionId.set(null);
+    sessionStores.initialSessionsHydrated.set(true);
   });
 
   it("single click selects row without opening detail", async () => {
@@ -210,5 +212,14 @@ describe("Sidebar dashboard interactions", () => {
     await waitFor(() => {
       expect(container.querySelector(".animate-pulse")).toBeNull();
     });
+  });
+
+  it("hides dashboard rows until initial session hydration completes", () => {
+    sessionStores.initialSessionsHydrated.set(false);
+
+    render(Sidebar);
+
+    expect(screen.getByText("Loading sessions...")).toBeTruthy();
+    expect(screen.queryByText("Build dashboard")).toBeNull();
   });
 });

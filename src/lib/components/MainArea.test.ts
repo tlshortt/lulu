@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   activeSessionId,
   dashboardSelectedSessionId,
+  initialSessionsHydrated,
   sessions,
 } from "$lib/stores/sessions";
 import MainArea from "./MainArea.svelte";
@@ -12,6 +13,7 @@ describe("MainArea", () => {
     sessions.set([]);
     activeSessionId.set(null);
     dashboardSelectedSessionId.set(null);
+    initialSessionsHydrated.set(true);
   });
 
   it("shows empty state when there are no sessions", () => {
@@ -59,5 +61,25 @@ describe("MainArea", () => {
     expect(
       screen.getByText("Double-click to open selected session output"),
     ).toBeTruthy();
+  });
+
+  it("suppresses transient session content before initial hydration", () => {
+    initialSessionsHydrated.set(false);
+    sessions.set([
+      {
+        id: "transient-1",
+        name: "Transient Session",
+        status: "running",
+        working_dir: "/tmp",
+        created_at: "2025-01-01T00:00:00Z",
+        updated_at: "2025-01-01T00:00:00Z",
+      },
+    ]);
+    activeSessionId.set("transient-1");
+
+    render(MainArea);
+
+    expect(screen.getByText("Loading sessions...")).toBeTruthy();
+    expect(screen.queryByText("No active sessions")).toBeNull();
   });
 });

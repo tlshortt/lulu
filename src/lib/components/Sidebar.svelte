@@ -5,6 +5,7 @@
     cliPathOverride,
     dashboardRows,
     dashboardSelectedSessionId,
+    initialSessionsHydrated,
     loadSessionHistory,
     removeSession,
     sessions,
@@ -101,7 +102,15 @@
   </div>
 
   <div class="min-h-0 flex-1 overflow-auto px-4">
-    {#if $sessions.length === 0}
+    {#if !$initialSessionsHydrated}
+      <div class="space-y-3 pb-6 text-sm text-foreground/60">
+        <div
+          class="rounded-md border border-border bg-background/40 px-3 py-2 font-mono"
+        >
+          Loading sessions...
+        </div>
+      </div>
+    {:else if $sessions.length === 0}
       <div class="space-y-3 pb-6 text-sm text-foreground/60">
         <div
           class="rounded-md border border-border bg-background/40 px-3 py-2 font-mono"

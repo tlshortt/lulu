@@ -3,12 +3,27 @@
   import {
     activeSessionId,
     dashboardSelectedSessionId,
+    initialSessionsHydrated,
     sessions,
   } from "$lib/stores/sessions";
 </script>
 
 <section class="flex h-full flex-1 flex-col bg-background text-foreground">
-  {#if $sessions.length === 0}
+  {#if !$initialSessionsHydrated}
+    <div
+      class="flex h-full flex-col items-center justify-center gap-4 px-8 text-center"
+    >
+      <div
+        class="text-sm font-semibold uppercase tracking-[0.2em] text-foreground/40"
+      >
+        Sessions
+      </div>
+      <div class="text-2xl font-semibold">Loading sessions...</div>
+      <p class="max-w-md text-sm text-foreground/60">
+        Preparing your dashboard and syncing the latest session state.
+      </p>
+    </div>
+  {:else if $sessions.length === 0}
     <div
       class="flex h-full flex-col items-center justify-center gap-4 px-8 text-center"
     >
