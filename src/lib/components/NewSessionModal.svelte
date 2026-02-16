@@ -8,7 +8,7 @@
 
   let name = $state("");
   let prompt = $state("");
-  let workingDir = $state("/Users/timothyshortt/");
+  let workingDir = $state("~");
   let isSubmitting = $state(false);
   let error = $state<string | null>(null);
 
