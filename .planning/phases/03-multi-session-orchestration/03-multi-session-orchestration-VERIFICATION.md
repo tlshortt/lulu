@@ -1,26 +1,22 @@
 ---
 phase: 03-multi-session-orchestration
-verified: 2026-02-16T00:37:20Z
+verified: 2026-02-16T02:35:44Z
 status: passed
-score: 23/23 must-haves verified
+score: 6/6 must-haves verified
 re_verification:
-  previous_status: human_needed
-  previous_score: 22/22
-  gaps_closed:
-    - "Automated projection, supervisor transition, and worktree wiring checks remain green"
-    - "Startup render stability gap closed via explicit first-load hydration boundary and gated MainArea rendering"
-    - "Regression coverage added for transient pre-hydration suppression in MainArea"
+  previous_status: passed
+  previous_score: 23/23
+  gaps_closed: []
   gaps_remaining: []
   regressions: []
-gaps: []
 ---
 
 # Phase 3: Multi-Session Orchestration Verification Report
 
 **Phase Goal:** User can run 3-5 parallel Claude Code sessions with unified dashboard view.
-**Verified:** 2026-02-16T00:37:20Z
+**Verified:** 2026-02-16T02:35:44Z
 **Status:** passed
-**Re-verification:** Yes - after gap closure
+**Re-verification:** Yes - regression verification after prior pass
 
 ## Goal Achievement
 
@@ -28,64 +24,71 @@ gaps: []
 
 | # | Truth | Status | Evidence |
 | --- | --- | --- | --- |
-| 1 | User can launch multiple named sessions (3-5) in parallel without blocking each other | ✓ VERIFIED | `cargo test --test multi_session_orchestration` passed; test launches five concurrent session tasks in `src-tauri/tests/multi_session_orchestration.rs:185` |
-| 2 | User sees dashboard list with name, status, and recent activity age at a glance | ✓ VERIFIED | Store projects row status/age/failure in `src/lib/stores/sessions.ts:208`; sidebar renders row name/status/age in `src/lib/components/Sidebar.svelte:133` and `src/lib/components/Sidebar.svelte:135`; unit tests passed (`sessions.dashboard`, `Sidebar`) |
-| 3 | User can click into any session to view its live output stream | ✓ VERIFIED | Row handlers are wired in `src/lib/components/Sidebar.svelte:128` and `src/lib/components/Sidebar.svelte:129`; `MainArea` tests passed in `src/lib/components/MainArea.test.ts` |
-| 4 | Each session runs in isolated git worktree to prevent conflicts | ✓ VERIFIED | Worktree creation + spawn wiring in `src-tauri/src/commands/session.rs:183` and `src-tauri/src/commands/session.rs:218`; `spawn_uses_session_specific_worktree_path` passed in `src-tauri/tests/worktree_lifecycle.rs:78` |
-| 5 | One crashed session does not affect other running sessions | ✓ VERIFIED | Isolation assertion remains in `src-tauri/tests/multi_session_orchestration.rs:228`; test passed |
-| 6 | App startup view is visually stable (no transient dashboard-list blink before New Session startup view) | ✓ VERIFIED | First-load gate introduced via `initialSessionsHydrated` in `src/lib/stores/sessions.ts:24`, set after initial load in `src/lib/stores/sessions.ts:454` and fail-safe path `src/lib/stores/sessions.ts:520`; `MainArea` blocks pre-hydration frames in `src/lib/components/MainArea.svelte:12`; regression test `suppresses transient session content before initial hydration` passes in `src/lib/components/MainArea.test.ts:66` |
+| 1 | User can run 3-5 sessions in parallel without blocking | ✓ VERIFIED | `src-tauri/tests/multi_session_orchestration.rs:138` defines 5 concurrent sessions and `src-tauri/tests/multi_session_orchestration.rs:185` launches them in parallel; `cargo test --test multi_session_orchestration` passed. |
+| 2 | A unified dashboard list shows row name, locked status, and compact activity age | ✓ VERIFIED | Row projection derives `name/status/recentActivity` in `src/lib/stores/sessions.ts:227`; row rendering shows name/status/age in `src/lib/components/Sidebar.svelte:226`, `src/lib/components/Sidebar.svelte:243`, and `src/lib/components/Sidebar.svelte:229`; `npm run test:unit -- sessions.dashboard Sidebar MainArea` passed. |
+| 3 | User can select and open any session from dashboard into live detail stream | ✓ VERIFIED | Single-click select and double-click open are wired at `src/lib/components/Sidebar.svelte:190` and `src/lib/components/Sidebar.svelte:191`; opened branch renders session output in `src/lib/components/MainArea.svelte:90`. |
+| 4 | Each session runs in an isolated git worktree | ✓ VERIFIED | Session spawn path creates per-session worktree before execution (`src-tauri/src/commands/session.rs:56` and `src-tauri/src/commands/session.rs:262`); lifecycle implementation is substantive in `src-tauri/src/session/worktree.rs:43`; `cargo test --test worktree_lifecycle` passed including `spawn_uses_session_specific_worktree_path`. |
+| 5 | One crashed session does not affect unrelated running sessions | ✓ VERIFIED | Isolation assertion in `src-tauri/tests/multi_session_orchestration.rs:228` confirms peers continue running after one failure; terminal transition guard remains one-time per session at `src-tauri/tests/multi_session_orchestration.rs:247`; test passed. |
+| 6 | Startup view is stable and does not flash dashboard rows before initial hydration completes | ✓ VERIFIED | First-load hydration gate is explicit in `src/lib/stores/sessions.ts:24`, `src/lib/stores/sessions.ts:515`, and `src/lib/stores/sessions.ts:520`; render gate uses that signal in `src/lib/components/MainArea.svelte:11`; regression test exists at `src/lib/components/MainArea.test.ts:69` and passed. |
 
-**Score:** 5/6 truths verified
+**Score:** 6/6 truths verified
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 | --- | --- | --- | --- |
-| `src-tauri/src/session/projection.rs` | Runtime-used dashboard row projection helpers for status/failure normalization | ✓ VERIFIED | Exists and substantive; used by command path (`project_dashboard_row` via `project_dashboard_rows`) in `src-tauri/src/commands/session.rs:56` and `src-tauri/src/commands/session.rs:460` |
-| `src-tauri/src/commands/session.rs` | Backend command path exposing projected dashboard rows | ✓ VERIFIED | `list_dashboard_sessions` returns `DashboardSessionProjection` mapped through projection boundary at `src-tauri/src/commands/session.rs:456` |
-| `src-tauri/src/session/supervisor.rs` | Supervisor-owned terminal transition reducer (DB persistence + status event emission) | ✓ VERIFIED | Includes guarded transition logic and DB writes at `src-tauri/src/session/supervisor.rs:171` and emits `session-event` at `src-tauri/src/session/supervisor.rs:150` |
-| `src-tauri/tests/multi_session_orchestration.rs` | Regression coverage for supervisor-owned terminal boundaries and mixed-outcome isolation | ✓ VERIFIED | Calls supervisor transition API (`finalize_terminal_transition`) and asserts one terminal transition per session at `src-tauri/tests/multi_session_orchestration.rs:31` and `src-tauri/tests/multi_session_orchestration.rs:247` |
-| `src-tauri/src/session/worktree.rs` | Worktree lifecycle service for per-session isolation | ✓ VERIFIED | Quick regression check: still referenced by commands in `src-tauri/src/commands/session.rs:167` and tests pass |
-| `src/lib/stores/sessions.ts` | Dashboard projection store with locked status vocabulary and age labels | ✓ VERIFIED | Quick regression check: `dashboardRows` derivation intact at `src/lib/stores/sessions.ts:208` |
-| `src/lib/components/Sidebar.svelte` | Dashboard list rendering and select/open interactions | ✓ VERIFIED | Quick regression check: click/double-click handlers and failed reason render still present at `src/lib/components/Sidebar.svelte:128` and `src/lib/components/Sidebar.svelte:151` |
-| `src/routes/+page.svelte` | Stable initial load choreography for listeners + session hydration | ✓ VERIFIED | Bootstrap still invokes listeners + initial load (`src/routes/+page.svelte:67`, `src/routes/+page.svelte:70`), while hydration completion is now explicit in store load paths (`src/lib/stores/sessions.ts:454`, `src/lib/stores/sessions.ts:520`) |
-| `src/lib/components/MainArea.svelte` | Startup/empty-state rendering should not expose transient intermediate frames | ✓ VERIFIED | Render path is gated by `!$initialSessionsHydrated` before evaluating sessions/selection (`src/lib/components/MainArea.svelte:12`), eliminating first-load intermediate frames |
+| `src-tauri/src/session/worktree.rs` | Git worktree lifecycle service | ✓ VERIFIED | Exists, substantive (create/list/remove/prune/reconcile), and wired from command/startup paths (`src-tauri/src/commands/session.rs:56`, `src-tauri/src/commands/session.rs:168`). |
+| `src-tauri/src/session/projection.rs` | Locked dashboard projection/status normalization | ✓ VERIFIED | Exists with four-state mapping and failure normalization (`src-tauri/src/session/projection.rs:19`, `src-tauri/src/session/projection.rs:58`); runtime-wired by list dashboard command import/use (`src-tauri/src/commands/session.rs:2`, `src-tauri/src/commands/session.rs:506`). |
+| `src-tauri/src/db/session.rs` | Dashboard/session persistence fields and terminal transition helpers | ✓ VERIFIED | Stores `last_activity_at`, `failure_reason`, `worktree_path` in `SessionDashboardRow` (`src-tauri/src/db/session.rs:29`); query/transition APIs are substantive (`src-tauri/src/db/session.rs:141`, `src-tauri/src/db/session.rs:211`). |
+| `src-tauri/src/session/supervisor.rs` | Per-session runtime supervision + terminal reducer boundary | ✓ VERIFIED | Terminal transition ownership and status-event emission are implemented (`src-tauri/src/session/supervisor.rs:120`, `src-tauri/src/session/supervisor.rs:171`, `src-tauri/src/session/supervisor.rs:150`) and called from command orchestration (`src-tauri/src/commands/session.rs:109`). |
+| `src-tauri/src/commands/session.rs` | Multi-session command orchestration, projection wiring, worktree wiring | ✓ VERIFIED | Contains spawn/list/reconcile flow and projection mapper path (`src-tauri/src/commands/session.rs:187`, `src-tauri/src/commands/session.rs:502`, `src-tauri/src/commands/session.rs:144`). |
+| `src-tauri/src/lib.rs` | Startup reconcile wiring + command registration | ✓ VERIFIED | Startup reconcile is invoked before app state manage (`src-tauri/src/lib.rs:21`) and dashboard command is registered (`src-tauri/src/lib.rs:31`). |
+| `src/lib/stores/sessions.ts` | Frontend dashboard projection + hydration/readiness state + event routing | ✓ VERIFIED | `dashboardRows` derivation/status mapping/hydration lifecycle present (`src/lib/stores/sessions.ts:211`, `src/lib/stores/sessions.ts:139`, `src/lib/stores/sessions.ts:515`) and event routing updates live state (`src/lib/stores/sessions.ts:399`). |
+| `src/lib/components/Sidebar.svelte` | Dashboard list rendering and row interactions | ✓ VERIFIED | Renders list rows with locked visuals + failure reason and click/double-click handlers (`src/lib/components/Sidebar.svelte:179`, `src/lib/components/Sidebar.svelte:190`, `src/lib/components/Sidebar.svelte:245`). |
+| `src/lib/components/MainArea.svelte` | Hydration-safe startup/list/detail branch gating | ✓ VERIFIED | Explicit pre-hydration gate and deterministic branch logic at `src/lib/components/MainArea.svelte:11` and `src/lib/components/MainArea.svelte:37`. |
+| `src/routes/+page.svelte` | Bootstrap choreography for listeners + initial hydration | ✓ VERIFIED | Mount path initializes listeners and then bootstraps initial sessions (`src/routes/+page.svelte:70`, `src/routes/+page.svelte:73`). |
+| `src-tauri/tests/multi_session_orchestration.rs` | Parallel/concurrency + crash isolation regression proof | ✓ VERIFIED | 5-session mixed-outcome orchestration and isolation assertions are present (`src-tauri/tests/multi_session_orchestration.rs:138`, `src-tauri/tests/multi_session_orchestration.rs:228`). |
+| `src-tauri/tests/worktree_lifecycle.rs` | Worktree/projection/reconcile regression proof | ✓ VERIFIED | Tests projection locking, unique worktree paths, and startup reconciliation (`src-tauri/tests/worktree_lifecycle.rs:49`, `src-tauri/tests/worktree_lifecycle.rs:78`, `src-tauri/tests/worktree_lifecycle.rs:105`). |
+| `src/lib/__tests__/sessions.dashboard.test.ts` | Dashboard projection/readiness regression proof | ✓ VERIFIED | Covers locked statuses/order/age/failure and hydration transitions (`src/lib/__tests__/sessions.dashboard.test.ts:61`, `src/lib/__tests__/sessions.dashboard.test.ts:106`, `src/lib/__tests__/sessions.dashboard.test.ts:199`). |
+| `src/lib/components/Sidebar.test.ts` and `src/lib/components/MainArea.test.ts` | UI interaction/startup stability regression proof | ✓ VERIFIED | Sidebar select/open + rendering constraints (`src/lib/components/Sidebar.test.ts:83`, `src/lib/components/Sidebar.test.ts:97`); MainArea hydration suppression test (`src/lib/components/MainArea.test.ts:69`). |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 | --- | --- | --- | --- | --- |
-| `src-tauri/src/commands/session.rs` | `src-tauri/src/session/projection.rs` | list dashboard command maps DB rows through `project_dashboard_row` | ✓ WIRED | Projection import and mapper exist (`src-tauri/src/commands/session.rs:2`, `src-tauri/src/commands/session.rs:56`, `src-tauri/src/commands/session.rs:460`) |
-| `src-tauri/src/session/supervisor.rs` | `src-tauri/src/db/session.rs` | supervisor reducer performs terminal transition + updates | ✓ WIRED | `transition_session_terminal`, `update_session_status`, `update_last_activity`, `update_failure_reason` in `src-tauri/src/session/supervisor.rs:171`-`src-tauri/src/session/supervisor.rs:190` |
-| `src-tauri/src/session/supervisor.rs` | `session-event` | supervisor emits canonical terminal status payloads | ✓ WIRED | `app.emit("session-event", status_event)` in `src-tauri/src/session/supervisor.rs:150`, invoked from command finalizer at `src-tauri/src/commands/session.rs:77` |
-| `src-tauri/src/commands/session.rs` | `src-tauri/src/session/worktree.rs` | create worktree before spawn | ✓ WIRED | `create_worktree` before `spawn_with_events` in `src-tauri/src/commands/session.rs:183` and `src-tauri/src/commands/session.rs:218` |
-| `src-tauri/src/lib.rs` | `src-tauri/src/session/worktree.rs` | startup reconcile/prune path | ✓ WIRED | Startup reconcile call remains in `src-tauri/src/lib.rs:21` |
-| `src/lib/stores/sessions.ts` | `src/lib/components/Sidebar.svelte` | row projection binding status/age/failure | ✓ WIRED | Sidebar consumes derived row fields and renders status/age/failure at `src/lib/components/Sidebar.svelte:133` and `src/lib/components/Sidebar.svelte:151` |
-| `src/lib/components/Sidebar.svelte` | `src/lib/stores/sessions.ts` | single-click select + double-click open | ✓ WIRED | Store actions wired to `onclick`/`ondblclick` in `src/lib/components/Sidebar.svelte:128`-`src/lib/components/Sidebar.svelte:129` |
-| `src/lib/stores/sessions.ts` | `session-event` | immediate running-to-terminal updates | ✓ WIRED | Listener routing remains via `routeSessionEvent` in `src/lib/stores/sessions.ts` (regression unit tests passed) |
-| `src/routes/+page.svelte` | `src/lib/stores/sessions.ts` | app mount bootstrap (`initSessionListeners` + `loadSessionsWithRetry`) | ✓ WIRED | Bootstrap wiring remains (`src/routes/+page.svelte:67`, `src/routes/+page.svelte:70`) and store now deterministically publishes hydration completion (`src/lib/stores/sessions.ts:454`, `src/lib/stores/sessions.ts:520`) consumed by `MainArea` gate |
+| `src-tauri/src/commands/session.rs` | `src-tauri/src/session/worktree.rs` | Create worktree before spawn | ✓ WIRED | `WorktreeService::from_working_dir` + `create_worktree` used in `resolve_execution_dir_with_worktree` (`src-tauri/src/commands/session.rs:56`) before `spawn_with_events` (`src-tauri/src/commands/session.rs:262`). |
+| `src-tauri/src/commands/session.rs` | `src-tauri/src/session/projection.rs` | List dashboard rows through projection boundary | ✓ WIRED | `project_dashboard_row` imported and applied in mapper (`src-tauri/src/commands/session.rs:2`, `src-tauri/src/commands/session.rs:88`, `src-tauri/src/commands/session.rs:506`). |
+| `src-tauri/src/lib.rs` | `src-tauri/src/commands/session.rs` + worktree reconcile path | Startup stale/worktree reconciliation | ✓ WIRED | Startup calls `reconcile_sessions_on_startup` (`src-tauri/src/lib.rs:5`, `src-tauri/src/lib.rs:21`) which reconciles sessions/worktrees (`src-tauri/src/commands/session.rs:144`, `src-tauri/src/commands/session.rs:181`). |
+| `src-tauri/src/commands/session.rs` | `src-tauri/src/session/supervisor.rs` | Terminal transition delegated to supervisor reducer | ✓ WIRED | Command finalizer calls supervisor `finalize_terminal_transition_and_emit` (`src-tauri/src/commands/session.rs:109`), not direct terminal DB reducer logic. |
+| `src-tauri/src/session/supervisor.rs` | `src-tauri/src/db/session.rs` | Single terminal transition persistence boundary | ✓ WIRED | Reducer calls `transition_session_terminal/update_session_status/update_last_activity/update_failure_reason` (`src-tauri/src/session/supervisor.rs:171`, `src-tauri/src/session/supervisor.rs:174`, `src-tauri/src/session/supervisor.rs:179`, `src-tauri/src/session/supervisor.rs:189`). |
+| `src-tauri/src/session/supervisor.rs` | `session-event` | Emit canonical terminal status payload | ✓ WIRED | Terminal emission from supervisor via `app.emit("session-event", status_event)` (`src-tauri/src/session/supervisor.rs:150`). |
+| `src/routes/+page.svelte` | `src/lib/stores/sessions.ts` | Bootstrap listeners + initial hydration load | ✓ WIRED | `initSessionListeners` and `bootstrapInitialSessions` invoked on mount (`src/routes/+page.svelte:70`, `src/routes/+page.svelte:73`). |
+| `src/lib/stores/sessions.ts` | `src/lib/components/Sidebar.svelte` | Dashboard row projection binding | ✓ WIRED | `dashboardRows` contains locked fields (`src/lib/stores/sessions.ts:227`) consumed/rendered in sidebar rows (`src/lib/components/Sidebar.svelte:179`, `src/lib/components/Sidebar.svelte:229`, `src/lib/components/Sidebar.svelte:245`). |
+| `src/lib/components/Sidebar.svelte` | `src/lib/stores/sessions.ts` | Single-click select + double-click open | ✓ WIRED | Handlers invoke store state transitions (`src/lib/components/Sidebar.svelte:25`, `src/lib/components/Sidebar.svelte:33`) from row events (`src/lib/components/Sidebar.svelte:190`, `src/lib/components/Sidebar.svelte:191`). |
+| `src/lib/stores/sessions.ts` | `session-event` | Immediate running-to-terminal dashboard updates | ✓ WIRED | Listener routes event payloads to `routeSessionEvent` (`src/lib/stores/sessions.ts:695`), which updates status/events (`src/lib/stores/sessions.ts:414`, `src/lib/stores/sessions.ts:429`). |
+| `src/lib/stores/sessions.ts` | `src/lib/components/MainArea.svelte` | Initial hydration gate prevents pre-ready branch selection | ✓ WIRED | Store publishes `initialSessionsHydrated` (`src/lib/stores/sessions.ts:24`, `src/lib/stores/sessions.ts:520`) consumed by MainArea gate (`src/lib/components/MainArea.svelte:11`). |
 
 ### Requirements Coverage
 
 | Requirement | Status | Blocking Issue |
 | --- | --- | --- |
-| SESS-01 | ✓ SATISFIED | Parallel 5-session orchestration verified by passing integration test (`multi_session_orchestration`) |
-| SESS-02 | ✓ SATISFIED | Startup render stability now enforced by explicit hydration gate and covered by passing regression tests (`MainArea`, `sessions.dashboard`) |
-| SESS-03 | ✓ SATISFIED | User-facing dashboard vocabulary constrained to `Starting/Running/Completed/Failed` and projection tests pass |
-| GIT-02 | ✓ SATISFIED | Session-specific worktree lifecycle remains wired and tested (`worktree_lifecycle`) |
-| LIFE-03 | ✓ SATISFIED | Mixed-outcome isolation assertion passes (`multi_session_orchestration`) |
+| SESS-01 | ✓ SATISFIED | 5-session parallel mixed-outcome orchestration test passes (`src-tauri/tests/multi_session_orchestration.rs:138`; `cargo test --test multi_session_orchestration`). |
+| SESS-02 | ✓ SATISFIED | Unified dashboard rows with name/status/age and stable startup hydration are implemented and covered (`src/lib/stores/sessions.ts:211`, `src/lib/components/Sidebar.svelte:179`, `src/lib/components/MainArea.test.ts:69`). |
+| SESS-03 | ✓ SATISFIED | User-facing status vocabulary is locked to `Starting/Running/Completed/Failed` in projection + store and tested (`src-tauri/src/session/projection.rs:4`, `src/lib/stores/sessions.ts:139`, `src/lib/__tests__/sessions.dashboard.test.ts:61`). |
+| GIT-02 | ✓ SATISFIED | Session-specific worktree creation/reconcile/remove remains wired and tested (`src-tauri/src/session/worktree.rs:43`, `src-tauri/src/commands/session.rs:56`, `src-tauri/tests/worktree_lifecycle.rs:78`). |
+| LIFE-03 | ✓ SATISFIED | Crash isolation assertion verifies one failed session does not stop siblings (`src-tauri/tests/multi_session_orchestration.rs:228`). |
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 | --- | --- | --- | --- | --- |
-| `src-tauri/src/commands/session.rs` | 308 | Match default arm `_ => {}` | ℹ️ Info | Normal exhaustive branch; not a stub or placeholder implementation |
+| `src/lib/components/Sidebar.svelte` | 143 | `placeholder=...` input attribute | ℹ️ Info | Benign UX placeholder text; not a stub/placeholder implementation. |
 
 ### Gaps Summary
 
-No remaining phase-gating gaps were found. Architecture/wiring checks remain green, startup rendering is now hydration-gated, and regression coverage protects against reintroducing the transient list-blink behavior.
+No phase-gating gaps were found. Multi-session concurrency, worktree isolation, supervisor terminal ownership, and unified dashboard readiness wiring are all present and backed by passing backend/frontend regression suites.
 
 ---
 
-_Verified: 2026-02-16T00:37:20Z_
+_Verified: 2026-02-16T02:35:44Z_
 _Verifier: Claude (gsd-verifier)_
