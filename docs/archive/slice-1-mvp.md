@@ -13,7 +13,7 @@ This is the foundation slice. It scaffolds the Tauri v2 + React 19 project and e
 ## Step 1: Scaffold the Tauri + React project
 
 ```bash
-cd /Users/tlshortt/workspace
+cd ~/workspace
 cargo install create-tauri-app
 cargo create-tauri-app lulu --template react-ts --manager bun
 cd lulu

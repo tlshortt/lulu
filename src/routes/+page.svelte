@@ -3,8 +3,9 @@
   import MainArea from "$lib/components/MainArea.svelte";
   import NewSessionModal from "$lib/components/NewSessionModal.svelte";
   import {
+    bootstrapInitialSessions,
+    beginInitialSessionsHydration,
     initSessionListeners,
-    loadSessionsWithRetry,
   } from "$lib/stores/sessions";
   import { onMount } from "svelte";
 
@@ -15,6 +16,8 @@
   let newSessionOpen = $state(false);
   let sidebarWidth = $state(SIDEBAR_DEFAULT_WIDTH);
   let resizingSidebar = $state(false);
+
+  beginInitialSessionsHydration();
 
   const canUseStorage = () => typeof window !== "undefined";
 
@@ -64,10 +67,10 @@
   onMount(() => {
     sidebarWidth = loadSidebarWidth();
 
-    void initSessionListeners().catch((error) => {
+    void initSessionListeners().catch((error: unknown) => {
       console.error("Failed to initialize session listeners", error);
     });
-    void loadSessionsWithRetry().catch((error) => {
+    void bootstrapInitialSessions().catch((error: unknown) => {
       console.error("Failed to load sessions", error);
     });
 
@@ -130,7 +133,7 @@
   });
 </script>
 
-<div class="flex h-screen bg-background text-foreground">
+<div class="flex h-screen overflow-hidden bg-background text-foreground">
   <div class="relative h-full shrink-0" style={`width: ${sidebarWidth}px;`}>
     <Sidebar onNewSession={openNewSession} />
     <div

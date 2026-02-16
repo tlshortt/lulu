@@ -60,7 +60,11 @@
       onClose();
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to start session.";
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : "Failed to start session.";
       error = message;
     } finally {
       isSubmitting = false;
@@ -145,7 +149,7 @@
           <input
             class="mt-2 w-full rounded-md border border-border bg-background/40 px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
             bind:value={workingDir}
-            placeholder="/Users/you/workspace/project"
+            placeholder="~/workspace/project"
             autocomplete="off"
             onkeydown={handleFormKeydown}
           />

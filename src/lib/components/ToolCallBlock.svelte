@@ -50,7 +50,7 @@
         Args
       </div>
       <pre
-        class="overflow-x-auto rounded-md border border-border/50 bg-background/60 p-2 text-xs">{format(
+        class="max-w-full whitespace-pre-wrap break-words rounded-md border border-border/50 bg-background/60 p-2 text-xs">{format(
           args,
         )}</pre>
     </div>
@@ -63,7 +63,7 @@
           Result
         </div>
         <pre
-          class="overflow-x-auto rounded-md border border-border/50 bg-background/60 p-2 text-xs">{format(
+          class="max-w-full whitespace-pre-wrap break-words rounded-md border border-border/50 bg-background/60 p-2 text-xs">{format(
             result,
           )}</pre>
       </div>

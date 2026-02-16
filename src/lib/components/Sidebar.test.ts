@@ -9,6 +9,8 @@ vi.mock("$lib/stores/sessions", async () => {
   return {
     activeSessionId: writable<string | null>(null),
     dashboardSelectedSessionId: writable<string | null>(null),
+    initialSessionsLoadError: writable<string | null>(null),
+    initialSessionsHydrated: writable(true),
     cliPathOverride: writable(""),
     sessions: writable([
       {
@@ -30,6 +32,7 @@ vi.mock("$lib/stores/sessions", async () => {
       },
     ]),
     loadSessionHistory: vi.fn(async () => {}),
+    renameSession: vi.fn(async () => {}),
     removeSession: vi.fn(async () => {}),
   };
 });
@@ -73,6 +76,8 @@ describe("Sidebar dashboard interactions", () => {
     ]);
     sessionStores.activeSessionId.set(null);
     sessionStores.dashboardSelectedSessionId.set(null);
+    sessionStores.initialSessionsLoadError.set(null);
+    sessionStores.initialSessionsHydrated.set(true);
   });
 
   it("single click selects row without opening detail", async () => {
@@ -209,6 +214,50 @@ describe("Sidebar dashboard interactions", () => {
 
     await waitFor(() => {
       expect(container.querySelector(".animate-pulse")).toBeNull();
+    });
+  });
+
+  it("hides dashboard rows until initial session hydration completes", () => {
+    sessionStores.initialSessionsHydrated.set(false);
+
+    render(Sidebar);
+
+    expect(screen.getByText("Loading sessions...")).toBeTruthy();
+    expect(screen.queryByText("Build dashboard")).toBeNull();
+  });
+
+  it("shows initial load error in empty sidebar state", () => {
+    sessionStores.sessions.set([]);
+    (
+      sessionStores.dashboardRows as unknown as {
+        set: (value: unknown) => void;
+      }
+    ).set([]);
+    sessionStores.initialSessionsHydrated.set(true);
+    sessionStores.initialSessionsLoadError.set("Failed to load sessions.");
+
+    render(Sidebar);
+
+    expect(screen.getByText("No sessions yet")).toBeTruthy();
+    expect(screen.getByText("Failed to load sessions.")).toBeTruthy();
+  });
+
+  it("renames a session from the row action", async () => {
+    render(Sidebar);
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Rename Build dashboard" }),
+    );
+
+    const input = screen.getByLabelText("Rename session");
+    await fireEvent.input(input, { target: { value: "  Updated name  " } });
+    await fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(sessionStores.renameSession).toHaveBeenCalledWith(
+        "session-1",
+        "Updated name",
+      );
     });
   });
 });

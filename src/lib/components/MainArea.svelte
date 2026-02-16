@@ -3,12 +3,38 @@
   import {
     activeSessionId,
     dashboardSelectedSessionId,
+    initialSessionsLoadError,
+    initialSessionsHydrated,
     sessions,
   } from "$lib/stores/sessions";
+
+  const showHydrationGate = $derived(!$initialSessionsHydrated);
+  const showStartupView = $derived(
+    $initialSessionsHydrated && $sessions.length === 0,
+  );
+  const showSelectionHint = $derived(
+    $initialSessionsHydrated && $sessions.length > 0 && !$activeSessionId,
+  );
 </script>
 
-<section class="flex h-full flex-1 flex-col bg-background text-foreground">
-  {#if $sessions.length === 0}
+<section
+  class="flex h-full min-w-0 flex-1 flex-col bg-background text-foreground"
+>
+  {#if showHydrationGate}
+    <div
+      class="flex h-full flex-col items-center justify-center gap-4 px-8 text-center"
+    >
+      <div
+        class="text-sm font-semibold uppercase tracking-[0.2em] text-foreground/40"
+      >
+        Sessions
+      </div>
+      <div class="text-2xl font-semibold">Loading sessions...</div>
+      <p class="max-w-md text-sm text-foreground/60">
+        Preparing your dashboard and syncing the latest session state.
+      </p>
+    </div>
+  {:else if showStartupView}
     <div
       class="flex h-full flex-col items-center justify-center gap-4 px-8 text-center"
     >
@@ -18,17 +44,23 @@
         Sessions
       </div>
       <div class="text-2xl font-semibold">No active sessions</div>
-      <p class="max-w-md text-sm text-foreground/60">
-        Start a Claude Code session to see live output here. This space will
-        render streaming logs, tool calls, and status updates in real time.
-      </p>
+      {#if $initialSessionsLoadError}
+        <p class="max-w-md text-sm text-destructive">
+          {$initialSessionsLoadError}
+        </p>
+      {:else}
+        <p class="max-w-md text-sm text-foreground/60">
+          Start a Claude Code session to see live output here. This space will
+          render streaming logs, tool calls, and status updates in real time.
+        </p>
+      {/if}
       <div
         class="rounded-md border border-border bg-sidebar/60 px-4 py-3 font-mono text-xs text-foreground/70"
       >
         Press <span class="text-foreground">⌘ + N</span> to start a new session
       </div>
     </div>
-  {:else if !$activeSessionId}
+  {:else if showSelectionHint}
     <div
       class="flex h-full flex-col items-center justify-center gap-3 px-8 text-center"
     >

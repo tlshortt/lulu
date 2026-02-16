@@ -130,7 +130,7 @@
     </p>
   </div>
 {:else}
-  <div class="flex h-full flex-col">
+  <div class="flex h-full min-w-0 flex-col">
     <div
       class="flex items-center justify-between border-b border-border px-6 py-4"
     >
@@ -158,7 +158,7 @@
       </button>
     </div>
 
-    <div class="flex-1 space-y-3 overflow-auto px-6 py-4">
+    <div class="flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-6 py-4">
       {#if currentSessionId && debug}
         <details
           class="rounded-lg border border-border/70 bg-background/35 px-4 py-3 text-xs text-foreground/70"
@@ -171,18 +171,20 @@
           <div class="mt-3 space-y-2">
             <div>
               <span class="font-semibold text-foreground/65">CLI:</span>
-              <span class="ml-2 font-mono">{debug.cliPath ?? "(unknown)"}</span>
+              <span class="ml-2 break-all font-mono"
+                >{debug.cliPath ?? "(unknown)"}</span
+              >
             </div>
             <div>
               <span class="font-semibold text-foreground/65">Working dir:</span>
-              <span class="ml-2 font-mono"
+              <span class="ml-2 break-all font-mono"
                 >{debug.workingDir ?? "(unknown)"}</span
               >
             </div>
             <div>
               <span class="font-semibold text-foreground/65">Args:</span>
               <pre
-                class="mt-1 whitespace-pre-wrap rounded border border-border/50 bg-background/45 px-2 py-1 font-mono">{(
+                class="mt-1 max-w-full whitespace-pre-wrap break-words rounded border border-border/50 bg-background/45 px-2 py-1 font-mono">{(
                   debug.args ?? []
                 ).join(" ") || "(none)"}</pre>
             </div>
@@ -192,7 +194,7 @@
                 <div class="mt-1 text-foreground/50">No stderr output yet.</div>
               {:else}
                 <pre
-                  class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded border border-border/50 bg-background/45 px-2 py-1 font-mono">{debug.stderrTail.join(
+                  class="mt-1 max-h-40 max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words rounded border border-border/50 bg-background/45 px-2 py-1 font-mono">{debug.stderrTail.join(
                     "\n",
                   )}</pre>
               {/if}
@@ -228,7 +230,8 @@
             <div
               class="rounded-lg border border-border/70 bg-background/45 px-4 py-3 text-sm text-foreground/85"
             >
-              <pre class="whitespace-pre-wrap">{item.value.data.content}</pre>
+              <pre class="max-w-full whitespace-pre-wrap break-words">{item
+                  .value.data.content}</pre>
             </div>
           {:else if item.value.type === "thinking"}
             <div
@@ -250,7 +253,8 @@
             <div
               class="rounded-lg border border-border/60 bg-background/30 px-4 py-3 text-xs text-foreground/65"
             >
-              <pre class="whitespace-pre-wrap">{JSON.stringify(
+              <pre
+                class="max-w-full whitespace-pre-wrap break-words">{JSON.stringify(
                   item.value.data.result,
                   null,
                   2,

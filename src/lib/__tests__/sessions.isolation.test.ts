@@ -251,7 +251,7 @@ describe("session event isolation", () => {
         session_id: "dbg-1",
         kind: "spawn",
         timestamp: "2026-01-01T00:00:00Z",
-        cli_path: "/Users/timothyshortt/.local/bin/claude",
+        cli_path: "/home/user/.local/bin/claude",
         args: [
           "-p",
           "<prompt redacted>",
@@ -272,7 +272,7 @@ describe("session event isolation", () => {
     });
 
     expect(readDebug()["dbg-1"]).toMatchObject({
-      cliPath: "/Users/timothyshortt/.local/bin/claude",
+      cliPath: "/home/user/.local/bin/claude",
       workingDir: "/tmp/worktree",
       stderrTail: ["Error: sample stderr"],
     });

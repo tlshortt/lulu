@@ -21,6 +21,8 @@ export const sessions = writable<Session[]>([]);
 export const activeSessionId = writable<string | null>(null);
 export const selectedSessionId = activeSessionId;
 export const dashboardSelectedSessionId = writable<string | null>(null);
+export const initialSessionsHydrated = writable(false);
+export const initialSessionsLoadError = writable<string | null>(null);
 export const sessionEvents = writable<Record<string, SessionEvent[]>>({});
 export interface SessionDebugState {
   cliPath?: string;
@@ -58,6 +60,7 @@ const FAILURE_STATUSES = new Set([
   "crashed",
 ]);
 const dashboardNow = writable(Date.now());
+const LIST_SESSIONS_TIMEOUT_MS = 1500;
 
 if (typeof window !== "undefined") {
   setInterval(() => {
@@ -242,6 +245,52 @@ const isTerminalStatus = (status: string) =>
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const invokeWithTimeout = async <T>(
+  command: string,
+  args: Record<string, unknown> | undefined,
+  timeoutMs: number,
+): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`${command} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+
+    return await Promise.race([invoke<T>(command, args), timeout]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+};
+
+const toErrorMessage = (value: unknown, fallback: string) => {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value;
+  }
+
+  if (value instanceof Error && value.message.trim().length > 0) {
+    return value.message;
+  }
+
+  return fallback;
+};
+
+export const beginInitialSessionsHydration = () => {
+  initialSessionsHydrated.set(false);
+  initialSessionsLoadError.set(null);
+};
+
+export const completeInitialSessionsHydration = (
+  error: string | null = null,
+) => {
+  initialSessionsLoadError.set(error);
+  initialSessionsHydrated.set(true);
+};
+
 const updateSessionStatus = (
   sessionId: string,
   status: string,
@@ -399,6 +448,8 @@ export function resetSessionEventStateForTests() {
   sequenceCounter = 0;
   listenerInitialized = false;
   listenerInitializing = false;
+  initialSessionsHydrated.set(false);
+  initialSessionsLoadError.set(null);
   dashboardNow.set(Date.now());
 }
 
@@ -443,7 +494,11 @@ function routeSessionDebugEvent(event: SessionDebugEvent) {
 }
 
 export async function loadSessions() {
-  const data = await invoke<Session[]>("list_sessions");
+  const data = await invokeWithTimeout<Session[]>(
+    "list_sessions",
+    undefined,
+    LIST_SESSIONS_TIMEOUT_MS,
+  );
   sessions.set(data);
   activeSessionId.update((current) => current ?? data[0]?.id ?? null);
   dashboardSelectedSessionId.update(
@@ -454,6 +509,20 @@ export async function loadSessions() {
     if (normalizeStatus(session.status) !== "running") {
       void loadSessionHistory(session.id);
     }
+  }
+}
+
+export async function bootstrapInitialSessions() {
+  beginInitialSessionsHydration();
+
+  try {
+    await loadSessionsWithRetry();
+    completeInitialSessionsHydration();
+  } catch (error) {
+    completeInitialSessionsHydration(
+      toErrorMessage(error, "Failed to load sessions."),
+    );
+    throw error;
   }
 }
 
@@ -504,10 +573,19 @@ export async function loadSessionsWithRetry(attempts = 5, delayMs = 150) {
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
+      console.debug(
+        `[sessions] loadSessionsWithRetry attempt ${attempt}/${attempts}`,
+      );
       await loadSessions();
+      console.debug("[sessions] list_sessions succeeded");
       return;
     } catch (error) {
       lastError = error;
+      console.warn("[sessions] list_sessions failed", {
+        attempt,
+        attempts,
+        error: toErrorMessage(error, "Unknown list_sessions failure"),
+      });
       if (attempt < attempts) {
         await delay(delayMs);
       }
