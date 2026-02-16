@@ -1,5 +1,11 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/svelte";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Sidebar from "./Sidebar.svelte";
 import * as sessionStores from "$lib/stores/sessions";
 
@@ -11,6 +17,10 @@ vi.mock("$lib/stores/sessions", async () => {
     dashboardSelectedSessionId: writable<string | null>(null),
     initialSessionsLoadError: writable<string | null>(null),
     initialSessionsHydrated: writable(true),
+    sessionOperations: writable<Record<string, "interrupting" | "resuming">>(
+      {},
+    ),
+    sessionErrors: writable<Record<string, string>>({}),
     cliPathOverride: writable(""),
     sessions: writable([
       {
@@ -32,8 +42,10 @@ vi.mock("$lib/stores/sessions", async () => {
       },
     ]),
     loadSessionHistory: vi.fn(async () => {}),
+    interruptSession: vi.fn(async () => {}),
     renameSession: vi.fn(async () => {}),
     removeSession: vi.fn(async () => {}),
+    resumeSession: vi.fn(async () => {}),
   };
 });
 
@@ -49,8 +61,11 @@ const readStore = <T>(store: {
 };
 
 describe("Sidebar dashboard interactions", () => {
+  let confirmSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     sessionStores.sessions.set([
       {
         id: "session-1",
@@ -78,6 +93,12 @@ describe("Sidebar dashboard interactions", () => {
     sessionStores.dashboardSelectedSessionId.set(null);
     sessionStores.initialSessionsLoadError.set(null);
     sessionStores.initialSessionsHydrated.set(true);
+    sessionStores.sessionOperations.set({});
+    sessionStores.sessionErrors.set({});
+  });
+
+  afterEach(() => {
+    confirmSpy.mockRestore();
   });
 
   it("single click selects row without opening detail", async () => {
@@ -259,5 +280,207 @@ describe("Sidebar dashboard interactions", () => {
         "Updated name",
       );
     });
+  });
+
+  it("confirms row interrupt with required copy and invokes store action", async () => {
+    sessionStores.sessions.set([
+      {
+        id: "run-1",
+        name: "Running session",
+        status: "running",
+        working_dir: "/tmp/project",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    (
+      sessionStores.dashboardRows as unknown as {
+        set: (value: unknown) => void;
+      }
+    ).set([
+      {
+        id: "run-1",
+        name: "Running session",
+        status: "Running",
+        recentActivity: "1s",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+
+    render(Sidebar);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Interrupt" }));
+
+    expect(confirmSpy).toHaveBeenCalledWith("Interrupt session?");
+    expect(sessionStores.interruptSession).toHaveBeenCalledWith("run-1");
+  });
+
+  it("shows compact interrupting feedback as chip and spinner", () => {
+    sessionStores.sessions.set([
+      {
+        id: "run-1",
+        name: "Running session",
+        status: "running",
+        working_dir: "/tmp/project",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    (
+      sessionStores.dashboardRows as unknown as {
+        set: (value: unknown) => void;
+      }
+    ).set([
+      {
+        id: "run-1",
+        name: "Running session",
+        status: "Running",
+        recentActivity: "1s",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    sessionStores.sessionOperations.set({ "run-1": "interrupting" });
+
+    const { container } = render(Sidebar);
+
+    expect(screen.getAllByText("Interrupting...").length).toBeGreaterThan(0);
+    expect(container.querySelector(".animate-spin")).toBeTruthy();
+  });
+
+  it("disables controls only for the targeted session operation", () => {
+    sessionStores.sessions.set([
+      {
+        id: "run-1",
+        name: "Running one",
+        status: "running",
+        working_dir: "/tmp/project",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      {
+        id: "run-2",
+        name: "Running two",
+        status: "running",
+        working_dir: "/tmp/project",
+        created_at: "2026-01-01T00:01:00Z",
+        updated_at: "2026-01-01T00:01:00Z",
+      },
+    ]);
+    (
+      sessionStores.dashboardRows as unknown as {
+        set: (value: unknown) => void;
+      }
+    ).set([
+      {
+        id: "run-1",
+        name: "Running one",
+        status: "Running",
+        recentActivity: "1s",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+      {
+        id: "run-2",
+        name: "Running two",
+        status: "Running",
+        recentActivity: "1s",
+        createdAt: "2026-01-01T00:01:00Z",
+      },
+    ]);
+    sessionStores.sessionOperations.set({ "run-1": "interrupting" });
+
+    render(Sidebar);
+
+    const rowOne = screen.getByText("Running one").closest("li");
+    const rowTwo = screen.getByText("Running two").closest("li");
+    const rowOneInterrupt = within(rowOne as HTMLElement)
+      .getAllByRole("button")
+      .find((button) => button.className.includes("border-amber-500/40"));
+    const rowTwoInterrupt = within(rowTwo as HTMLElement)
+      .getAllByRole("button")
+      .find((button) => button.className.includes("border-amber-500/40"));
+
+    expect(rowOneInterrupt?.hasAttribute("disabled")).toBe(true);
+    expect(rowTwoInterrupt?.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("shows resume controls for interrupted sessions", () => {
+    sessionStores.sessions.set([
+      {
+        id: "resume-1",
+        name: "Interrupted run",
+        status: "interrupted",
+        working_dir: "/tmp/project",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    (
+      sessionStores.dashboardRows as unknown as {
+        set: (value: unknown) => void;
+      }
+    ).set([
+      {
+        id: "resume-1",
+        name: "Interrupted run",
+        status: "Interrupted",
+        recentActivity: "5s",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+
+    render(Sidebar);
+
+    expect(screen.getByText("Interrupted")).toBeTruthy();
+    expect(
+      screen.getByPlaceholderText("Continue this session..."),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Resume" })).toBeTruthy();
+  });
+
+  it("keeps interrupt errors scoped to the affected row", () => {
+    sessionStores.sessions.set([
+      {
+        id: "run-1",
+        name: "Failed interrupt",
+        status: "running",
+        working_dir: "/tmp/project",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      {
+        id: "run-2",
+        name: "Healthy run",
+        status: "running",
+        working_dir: "/tmp/project",
+        created_at: "2026-01-01T00:01:00Z",
+        updated_at: "2026-01-01T00:01:00Z",
+      },
+    ]);
+    (
+      sessionStores.dashboardRows as unknown as {
+        set: (value: unknown) => void;
+      }
+    ).set([
+      {
+        id: "run-1",
+        name: "Failed interrupt",
+        status: "Running",
+        recentActivity: "3s",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+      {
+        id: "run-2",
+        name: "Healthy run",
+        status: "Running",
+        recentActivity: "3s",
+        createdAt: "2026-01-01T00:01:00Z",
+      },
+    ]);
+    sessionStores.sessionErrors.set({ "run-1": "Interrupt deadline exceeded" });
+
+    render(Sidebar);
+
+    expect(screen.getByText("Interrupt deadline exceeded")).toBeTruthy();
+    expect(screen.queryByText("Healthy run")).toBeTruthy();
   });
 });

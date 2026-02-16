@@ -4,7 +4,9 @@ import SessionOutput from "./SessionOutput.svelte";
 import {
   activeSessionId,
   sessionDebug,
+  sessionErrors,
   sessionEvents,
+  sessionOperations,
   sessions,
   showThinking,
 } from "$lib/stores/sessions";
@@ -33,6 +35,8 @@ describe("SessionOutput", () => {
     sessions.set([]);
     sessionEvents.set({});
     sessionDebug.set({});
+    sessionOperations.set({});
+    sessionErrors.set({});
     showThinking.set(false);
   });
 
@@ -183,5 +187,61 @@ describe("SessionOutput", () => {
     expect(screen.getByText("/home/user/.local/bin/claude")).toBeTruthy();
     expect(screen.getByText(/--output-format stream-json/)).toBeTruthy();
     expect(screen.getByText(/sample stderr line 1/)).toBeTruthy();
+  });
+
+  it("shows interrupt action for running sessions", () => {
+    setSessionState([]);
+
+    render(SessionOutput);
+
+    expect(screen.getByRole("button", { name: "Interrupt" })).toBeTruthy();
+    expect(
+      screen.queryByPlaceholderText("Continue this session..."),
+    ).toBeNull();
+  });
+
+  it("shows resume controls for completed and interrupted sessions", () => {
+    sessions.set([
+      {
+        id: sessionId,
+        name: "Output Session",
+        status: "interrupted",
+        working_dir: "/tmp/worktree",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    activeSessionId.set(sessionId);
+    sessionEvents.set({ [sessionId]: [] });
+
+    render(SessionOutput);
+
+    expect(
+      screen.getByPlaceholderText("Continue this session..."),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Resume" })).toBeTruthy();
+  });
+
+  it("disables only lifecycle controls while target session is interrupting", () => {
+    setSessionState([]);
+    sessionOperations.set({ [sessionId]: "interrupting" });
+
+    render(SessionOutput);
+
+    expect(
+      screen.getByRole("button", { name: "Interrupting..." }),
+    ).toHaveProperty("disabled", true);
+    expect(
+      screen.getByRole("button", { name: "Show thinking" }),
+    ).toHaveProperty("disabled", false);
+  });
+
+  it("renders per-session lifecycle errors in detail panel", () => {
+    setSessionState([]);
+    sessionErrors.set({ [sessionId]: "Interrupt deadline exceeded" });
+
+    render(SessionOutput);
+
+    expect(screen.getByText("Interrupt deadline exceeded")).toBeTruthy();
   });
 });
