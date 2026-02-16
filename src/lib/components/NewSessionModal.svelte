@@ -14,7 +14,7 @@
 
   const resetForm = () => {
     name = "";
-    prompt = "";
+    workingDir = "~";
     workingDir = "/Users/timothyshortt/";
     error = null;
   };
