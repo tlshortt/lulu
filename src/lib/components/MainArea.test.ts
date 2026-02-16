@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   activeSessionId,
   dashboardSelectedSessionId,
+  initialSessionsLoadError,
   initialSessionsHydrated,
   sessions,
 } from "$lib/stores/sessions";
@@ -13,6 +14,7 @@ describe("MainArea", () => {
     sessions.set([]);
     activeSessionId.set(null);
     dashboardSelectedSessionId.set(null);
+    initialSessionsLoadError.set(null);
     initialSessionsHydrated.set(true);
   });
 
@@ -81,5 +83,14 @@ describe("MainArea", () => {
 
     expect(screen.getByText("Loading sessions...")).toBeTruthy();
     expect(screen.queryByText("No active sessions")).toBeNull();
+  });
+
+  it("shows load error when initial fetch fails", () => {
+    initialSessionsLoadError.set("Failed to load sessions.");
+
+    render(MainArea);
+
+    expect(screen.getByText("No active sessions")).toBeTruthy();
+    expect(screen.getByText("Failed to load sessions.")).toBeTruthy();
   });
 });

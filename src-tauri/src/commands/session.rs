@@ -49,6 +49,38 @@ fn resolve_working_dir(working_dir: &str) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
+fn resolve_execution_dir_with_worktree(
+    working_dir: &str,
+    session_id: &str,
+) -> (Option<WorktreeService>, Option<PathBuf>, String, Option<String>) {
+    match WorktreeService::from_working_dir(working_dir) {
+        Ok(service) => match service.create_worktree(session_id) {
+            Ok(path) => {
+                let execution_dir = path.display().to_string();
+                (Some(service), Some(path), execution_dir, None)
+            }
+            Err(err) => (
+                None,
+                None,
+                working_dir.to_string(),
+                Some(format!(
+                    "Worktree creation failed, using working directory directly: {}",
+                    err
+                )),
+            ),
+        },
+        Err(err) => (
+            None,
+            None,
+            working_dir.to_string(),
+            Some(format!(
+                "No git repository detected, using working directory directly: {}",
+                err
+            )),
+        ),
+    }
+}
+
 fn is_terminal_status(status: &str) -> bool {
     TERMINAL_STATUSES.contains(&status)
 }
@@ -164,7 +196,22 @@ pub async fn spawn_session(
 ) -> Result<String, String> {
     let working_dir = resolve_working_dir(&working_dir)?;
     validate_working_dir(&working_dir)?;
-    let worktree_service = WorktreeService::from_working_dir(&working_dir)?;
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let (worktree_service, worktree_path, execution_dir, fallback_message) =
+        resolve_execution_dir_with_worktree(&working_dir, &session_id);
+
+    if let Some(message) = fallback_message {
+        let _ = app.emit(
+            "session-debug",
+            json!({
+                "session_id": session_id.clone(),
+                "kind": "worktree-fallback",
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "working_dir": working_dir.clone(),
+                "message": message,
+            }),
+        );
+    }
 
     let cli_override_path =
         cli_path_override.filter(|value| !value.trim().is_empty()).map(PathBuf::from);
@@ -178,10 +225,8 @@ pub async fn spawn_session(
         "stream-json".to_string(),
     ];
 
-    let session_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
-    let worktree_path = worktree_service.create_worktree(&session_id)?;
-    let worktree_path_str = worktree_path.display().to_string();
+    let worktree_path_str = worktree_path.as_ref().map(|path| path.display().to_string());
 
     let session = Session {
         id: session_id.clone(),
@@ -193,7 +238,7 @@ pub async fn spawn_session(
     };
 
     db.create_session(&session).map_err(|e| format!("Failed to create session: {}", e))?;
-    db.update_worktree_path(&session_id, Some(&worktree_path_str))
+    db.update_worktree_path(&session_id, worktree_path_str.as_deref())
         .map_err(|e| format!("Failed to persist session worktree path: {}", e))?;
 
     let _ = app.emit(
@@ -213,9 +258,8 @@ pub async fn spawn_session(
 
     let (event_tx, mut event_rx) = mpsc::channel::<SessionEvent>(256);
 
-    let worktree_dir = worktree_path.display().to_string();
     let spawned = match cli
-        .spawn_with_events(&prompt, &worktree_dir, &session_id, event_tx)
+        .spawn_with_events(&prompt, &execution_dir, &session_id, event_tx)
         .await
     {
         Ok(spawned) => spawned,
@@ -226,8 +270,10 @@ pub async fn spawn_session(
                     &session_id,
                     normalize_failure_reason(Some(&err)).as_deref(),
                 );
-            let _ = worktree_service.remove_worktree_for_session(&session_id);
-            let _ = worktree_service.prune_worktrees();
+            if let Some(worktree_service) = &worktree_service {
+                let _ = worktree_service.remove_worktree_for_session(&session_id);
+                let _ = worktree_service.prune_worktrees();
+            }
             let _ = app.emit("session-error", (&session_id, err.clone()));
             return Err(err);
         }
@@ -536,9 +582,27 @@ pub async fn delete_session(
 
 #[cfg(test)]
 mod tests {
-    use super::{project_dashboard_rows, resolve_working_dir};
+    use super::{
+        project_dashboard_rows, resolve_execution_dir_with_worktree, resolve_working_dir,
+    };
     use crate::db::SessionDashboardRow;
     use crate::session::projection::DASHBOARD_STATUS_FAILED;
+    use tempfile::tempdir;
+
+    fn run_git(repo_path: &std::path::Path, args: &[&str]) {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .output()
+            .expect("git command should execute");
+
+        assert!(
+            output.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 
     #[test]
     fn resolve_working_dir_expands_home_alias() {
@@ -571,5 +635,74 @@ mod tests {
         let projected = project_dashboard_rows(rows);
         assert_eq!(projected[0].status, DASHBOARD_STATUS_FAILED);
         assert_eq!(projected[0].failure_reason.as_deref(), Some("runtime error"));
+    }
+
+    #[test]
+    fn resolve_execution_dir_falls_back_for_non_git_folder() {
+        let temp = tempdir().expect("tempdir should be created");
+        let working_dir = temp.path().display().to_string();
+
+        let (service, worktree_path, execution_dir, fallback_message) =
+            resolve_execution_dir_with_worktree(&working_dir, "session-non-git");
+
+        assert!(service.is_none());
+        assert!(worktree_path.is_none());
+        assert_eq!(execution_dir, working_dir);
+        assert!(
+            fallback_message
+                .as_deref()
+                .unwrap_or_default()
+                .contains("No git repository detected"),
+            "expected explicit non-git fallback message"
+        );
+    }
+
+    #[test]
+    fn resolve_execution_dir_prefers_git_worktree_when_repo_ready() {
+        let temp = tempdir().expect("tempdir should be created");
+        run_git(temp.path(), &["init", "--initial-branch=main"]);
+        run_git(temp.path(), &["config", "user.name", "Lulu Test"]);
+        run_git(temp.path(), &["config", "user.email", "lulu@example.com"]);
+        std::fs::write(temp.path().join("README.md"), "# test\n").expect("seed file should write");
+        run_git(temp.path(), &["add", "README.md"]);
+        run_git(temp.path(), &["commit", "-m", "initial"]);
+
+        let working_dir = temp.path().display().to_string();
+        let session_id = "session-git";
+        let (service, worktree_path, execution_dir, fallback_message) =
+            resolve_execution_dir_with_worktree(&working_dir, session_id);
+
+        assert!(fallback_message.is_none());
+        let service = service.expect("expected worktree service for git repo");
+        let worktree_path = worktree_path.expect("expected created worktree path");
+        assert!(worktree_path.exists());
+        assert!(worktree_path.ends_with(session_id));
+        assert_eq!(execution_dir, worktree_path.display().to_string());
+
+        service
+            .remove_worktree_for_session(session_id)
+            .expect("worktree cleanup should succeed");
+        service.prune_worktrees().expect("worktree prune should succeed");
+    }
+
+    #[test]
+    fn resolve_execution_dir_falls_back_when_worktree_creation_fails() {
+        let temp = tempdir().expect("tempdir should be created");
+        run_git(temp.path(), &["init", "--initial-branch=main"]);
+
+        let working_dir = temp.path().display().to_string();
+        let (service, worktree_path, execution_dir, fallback_message) =
+            resolve_execution_dir_with_worktree(&working_dir, "session-no-head");
+
+        assert!(service.is_none());
+        assert!(worktree_path.is_none());
+        assert_eq!(execution_dir, working_dir);
+        assert!(
+            fallback_message
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Worktree creation failed"),
+            "expected explicit worktree creation fallback message"
+        );
     }
 }

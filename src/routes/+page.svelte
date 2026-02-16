@@ -4,9 +4,11 @@
   import NewSessionModal from "$lib/components/NewSessionModal.svelte";
   import {
     initSessionListeners,
+    initialSessionsLoadError,
     initialSessionsHydrated,
     loadSessionsWithRetry,
   } from "$lib/stores/sessions";
+  import { get } from "svelte/store";
   import { onMount } from "svelte";
 
   const SIDEBAR_STORAGE_KEY = "lulu:sidebar-width";
@@ -18,6 +20,7 @@
   let resizingSidebar = $state(false);
 
   initialSessionsHydrated.set(false);
+  initialSessionsLoadError.set(null);
 
   const canUseStorage = () => typeof window !== "undefined";
 
@@ -66,6 +69,17 @@
 
   onMount(() => {
     sidebarWidth = loadSidebarWidth();
+
+    const hydrationTimeout = window.setTimeout(() => {
+      if (get(initialSessionsHydrated)) {
+        return;
+      }
+
+      initialSessionsLoadError.set(
+        "Session load timed out. You can still start a new session.",
+      );
+      initialSessionsHydrated.set(true);
+    }, 5000);
 
     void initSessionListeners().catch((error) => {
       console.error("Failed to initialize session listeners", error);
@@ -125,6 +139,7 @@
     window.addEventListener("keydown", handleShortcut);
 
     return () => {
+      window.clearTimeout(hydrationTimeout);
       window.removeEventListener("keydown", handleShortcut);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
@@ -133,7 +148,7 @@
   });
 </script>
 
-<div class="flex h-screen bg-background text-foreground">
+<div class="flex h-screen overflow-hidden bg-background text-foreground">
   <div class="relative h-full shrink-0" style={`width: ${sidebarWidth}px;`}>
     <Sidebar onNewSession={openNewSession} />
     <div

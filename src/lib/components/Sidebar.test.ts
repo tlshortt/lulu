@@ -9,6 +9,7 @@ vi.mock("$lib/stores/sessions", async () => {
   return {
     activeSessionId: writable<string | null>(null),
     dashboardSelectedSessionId: writable<string | null>(null),
+    initialSessionsLoadError: writable<string | null>(null),
     initialSessionsHydrated: writable(true),
     cliPathOverride: writable(""),
     sessions: writable([
@@ -75,6 +76,7 @@ describe("Sidebar dashboard interactions", () => {
     ]);
     sessionStores.activeSessionId.set(null);
     sessionStores.dashboardSelectedSessionId.set(null);
+    sessionStores.initialSessionsLoadError.set(null);
     sessionStores.initialSessionsHydrated.set(true);
   });
 
@@ -222,6 +224,22 @@ describe("Sidebar dashboard interactions", () => {
 
     expect(screen.getByText("Loading sessions...")).toBeTruthy();
     expect(screen.queryByText("Build dashboard")).toBeNull();
+  });
+
+  it("shows initial load error in empty sidebar state", () => {
+    sessionStores.sessions.set([]);
+    (
+      sessionStores.dashboardRows as unknown as {
+        set: (value: unknown) => void;
+      }
+    ).set([]);
+    sessionStores.initialSessionsHydrated.set(true);
+    sessionStores.initialSessionsLoadError.set("Failed to load sessions.");
+
+    render(Sidebar);
+
+    expect(screen.getByText("No sessions yet")).toBeTruthy();
+    expect(screen.getByText("Failed to load sessions.")).toBeTruthy();
   });
 
   it("renames a session from the row action", async () => {
