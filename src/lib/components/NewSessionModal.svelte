@@ -64,7 +64,7 @@
           ? err
           : err instanceof Error
             ? err.message
-            : "Failed to start session.";
+            : "Failed to launch session. Verify your working directory and Claude CLI, then try again.";
       error = message;
     } finally {
       isSubmitting = false;
@@ -158,6 +158,8 @@
         {#if error}
           <div
             class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            role="alert"
+            aria-live="assertive"
           >
             {error}
           </div>
