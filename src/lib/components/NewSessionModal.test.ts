@@ -88,6 +88,68 @@ describe("NewSessionModal", () => {
         screen.getByText("Working directory does not exist: /tmp/missing"),
       ).toBeTruthy();
     });
+
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Start session" }),
+    ).not.toHaveProperty("disabled", true);
+  });
+
+  it("keeps entered values and allows retry after launch failure", async () => {
+    const onClose = vi.fn();
+    spawnSessionMock
+      .mockRejectedValueOnce(
+        "Failed to launch Claude CLI in '/tmp/missing': spawn failed",
+      )
+      .mockResolvedValueOnce("session-retry");
+
+    render(NewSessionModal, {
+      props: { open: true, onClose },
+    });
+
+    const nameInput = screen.getByLabelText("Session name") as HTMLInputElement;
+    const promptInput = screen.getByLabelText("Prompt") as HTMLTextAreaElement;
+    const dirInput = screen.getByLabelText(
+      "Working directory",
+    ) as HTMLInputElement;
+
+    await fireEvent.input(nameInput, {
+      target: { value: "Retry Session" },
+    });
+    await fireEvent.input(promptInput, {
+      target: { value: "Retry launch" },
+    });
+    await fireEvent.input(dirInput, {
+      target: { value: "/tmp/missing" },
+    });
+
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to launch Claude CLI/)).toBeTruthy();
+    });
+    expect(nameInput.value).toBe("Retry Session");
+    expect(promptInput.value).toBe("Retry launch");
+    expect(dirInput.value).toBe("/tmp/missing");
+
+    await fireEvent.input(dirInput, {
+      target: { value: "/tmp/fixed" },
+    });
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
+    );
+
+    await waitFor(() => {
+      expect(spawnSessionMock).toHaveBeenNthCalledWith(
+        2,
+        "Retry Session",
+        "Retry launch",
+        "/tmp/fixed",
+      );
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("calls spawnSession exactly once while submitting", async () => {
