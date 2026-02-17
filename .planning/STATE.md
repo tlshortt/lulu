@@ -14,8 +14,8 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 **Total Phases:** 6
 **Current Plan:** 2
 **Total Plans in Phase:** 2
-**Status:** Ready to execute
-**Last Activity:** 2026-02-16
+**Status:** Phase complete — ready for verification
+**Last Activity:** 2026-02-17
 
 Phase: 5 of 6 (Session Lifecycle Control)
 Plan: 0 of 2 (not started)
@@ -47,6 +47,7 @@ Last activity: 2026-02-16 — Rolled codebase back to post-Phase-3 commit and re
 | Phase 03 P05 | 2 min | 3 tasks | 5 files |
 | Phase 05 P01 | 5 min | 2 tasks | 8 files |
 | Phase 05 P02 | 6 min | 3 tasks | 7 files |
+| Phase 05 P03 | 3 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -89,6 +90,8 @@ Recent decisions affecting current work:
 - [Phase 05]: Model lifecycle operation and error state as session-scoped records so one failed interrupt never disables unrelated sessions.
 - [Phase 05]: Promote Interrupted to first-class dashboard vocabulary instead of mapping it to Failed.
 - [Phase 05]: Keep interrupt feedback compact in rows (chip + spinner) and expose richer lifecycle actions in row/detail controls.
+- [Phase 05]: Normalize spawn failures in the frontend store so the modal always receives user-actionable launch errors.
+- [Phase 05]: Delete partially-created session/worktree records on backend spawn failure to keep retries clean and deterministic.
 
 ### Pending Todos
 
@@ -103,8 +106,8 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T21:29:16.337Z
-**Stopped At:** Completed 05-02-PLAN.md
+**Last session:** 2026-02-17T00:50:00.037Z
+**Stopped At:** Completed 05-03-PLAN.md
 **Resume File:** None
 
 ---
