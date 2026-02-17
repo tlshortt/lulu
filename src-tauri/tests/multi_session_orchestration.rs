@@ -590,3 +590,44 @@ async fn resume_reuses_same_row_updates_metadata_and_keeps_terminal_idempotent()
         "terminal transition should apply once during resume"
     );
 }
+
+#[tokio::test]
+async fn cli_spawn_failure_is_actionable_and_retry_path_recovers() {
+    let temp = tempdir().expect("tempdir should be created");
+    let cli = ClaudeCli::find_with_override(Some(PathBuf::from(env!("CARGO_BIN_EXE_lulu_test_cli"))))
+        .expect("fixture cli should resolve");
+
+    let missing_dir = temp.path().join("does-not-exist");
+    let missing_dir_str = missing_dir.display().to_string();
+    let (failing_tx, _failing_rx) = tokio::sync::mpsc::channel(16);
+    let failing = match cli
+        .spawn_with_events("delay-ms=10", &missing_dir_str, "spawn-fail", failing_tx)
+        .await
+    {
+        Ok(_) => panic!("spawn should fail for missing working directory"),
+        Err(err) => err,
+    };
+
+    assert!(
+        failing.contains("Failed to spawn Claude CLI in"),
+        "failure should include spawn context"
+    );
+    assert!(
+        failing.contains(&missing_dir_str),
+        "failure should include working directory path"
+    );
+
+    let valid_dir = temp.path().display().to_string();
+    let (retry_tx, _retry_rx) = tokio::sync::mpsc::channel(16);
+    let mut spawned = cli
+        .spawn_with_events("delay-ms=10", &valid_dir, "spawn-retry", retry_tx)
+        .await
+        .expect("spawn retry should succeed with valid directory");
+
+    let exit = spawned
+        .child
+        .wait()
+        .await
+        .expect("retry process should finish cleanly");
+    assert!(exit.success(), "retry process should exit successfully");
+}

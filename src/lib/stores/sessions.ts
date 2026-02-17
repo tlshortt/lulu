@@ -65,6 +65,7 @@ const FAILURE_STATUSES = new Set([
 ]);
 const dashboardNow = writable(Date.now());
 const LIST_SESSIONS_TIMEOUT_MS = 1500;
+const SPAWN_SESSION_TIMEOUT_MS = 15000;
 
 if (typeof window !== "undefined") {
   setInterval(() => {
@@ -285,6 +286,36 @@ const toErrorMessage = (value: unknown, fallback: string) => {
   }
 
   return fallback;
+};
+
+const normalizeSpawnSessionError = (value: unknown) => {
+  const message = toErrorMessage(value, "Failed to launch a new session.");
+
+  if (message.includes("spawn_session timed out")) {
+    return "Session launch timed out after 15 seconds. Verify your working directory and Claude CLI, then try again.";
+  }
+
+  if (message.includes("Working directory does not exist")) {
+    return message;
+  }
+
+  if (message.includes("Working directory is not a directory")) {
+    return message;
+  }
+
+  if (message.includes("Claude CLI not found")) {
+    return "Claude CLI was not found. Install the Claude CLI or set a valid CLI path override in settings, then retry.";
+  }
+
+  if (message.includes("Invalid CLI override path")) {
+    return message;
+  }
+
+  if (message.includes("Unsupported Claude CLI version")) {
+    return message;
+  }
+
+  return message;
 };
 
 export const beginInitialSessionsHydration = () => {
@@ -692,13 +723,31 @@ export async function spawnSession(
 ) {
   await initSessionListeners();
 
-  const id = await invoke<string>("spawn_session", {
-    name,
-    prompt,
-    workingDir,
-    cliPathOverride: loadString("lulu:cli-path-override", "") || null,
-  });
-  await loadSessions();
+  let id: string;
+  try {
+    id = await invokeWithTimeout<string>(
+      "spawn_session",
+      {
+        name,
+        prompt,
+        workingDir,
+        cliPathOverride: loadString("lulu:cli-path-override", "") || null,
+      },
+      SPAWN_SESSION_TIMEOUT_MS,
+    );
+  } catch (error) {
+    throw new Error(normalizeSpawnSessionError(error));
+  }
+
+  try {
+    await loadSessions();
+  } catch (error) {
+    console.warn("[sessions] spawn succeeded but refresh failed", {
+      sessionId: id,
+      error: toErrorMessage(error, "Unknown list_sessions failure"),
+    });
+  }
+
   activeSessionId.set(id);
   dashboardSelectedSessionId.set(id);
   return id;

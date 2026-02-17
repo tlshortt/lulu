@@ -82,6 +82,37 @@ fn resolve_execution_dir_with_worktree(
     }
 }
 
+fn cleanup_failed_spawn_attempt(
+    db: &Database,
+    worktree_service: Option<&WorktreeService>,
+    session_id: &str,
+) {
+    let _ = db.delete_session(session_id);
+
+    if let Some(service) = worktree_service {
+        let _ = service.remove_worktree_for_session(session_id);
+        let _ = service.prune_worktrees();
+    }
+}
+
+fn normalize_spawn_session_error(error: &str, execution_dir: &str) -> String {
+    if error.starts_with("Working directory ") {
+        return error.to_string();
+    }
+
+    if error.contains("Claude CLI not found")
+        || error.contains("Invalid CLI override path")
+        || error.contains("Unsupported Claude CLI version")
+    {
+        return error.to_string();
+    }
+
+    format!(
+        "Failed to launch Claude CLI in '{}': {}. Verify the working directory and CLI configuration, then retry.",
+        execution_dir, error
+    )
+}
+
 fn is_terminal_status(status: &str) -> bool {
     TERMINAL_STATUSES.contains(&status)
 }
@@ -378,12 +409,16 @@ pub async fn spawn_session(
     };
 
     db.create_session(&session).map_err(|e| format!("Failed to create session: {}", e))?;
-    db.update_worktree_path(&session_id, worktree_path_str.as_deref())
-        .map_err(|e| format!("Failed to persist session worktree path: {}", e))?;
+    if let Err(err) = db.update_worktree_path(&session_id, worktree_path_str.as_deref()) {
+        cleanup_failed_spawn_attempt(&db, worktree_service.as_ref(), &session_id);
+        return Err(format!("Failed to persist session worktree path: {}", err));
+    }
 
     let run_id = uuid::Uuid::new_v4().to_string();
-    db.begin_run_attempt(&session_id, &run_id)
-        .map_err(|e| format!("Failed to persist session run metadata: {}", e))?;
+    if let Err(err) = db.begin_run_attempt(&session_id, &run_id) {
+        cleanup_failed_spawn_attempt(&db, worktree_service.as_ref(), &session_id);
+        return Err(format!("Failed to persist session run metadata: {}", err));
+    }
 
     let _ = app.emit(
         "session-debug",
@@ -398,8 +433,6 @@ pub async fn spawn_session(
         }),
     );
 
-    app.emit("session-started", &session_id).map_err(|e| e.to_string())?;
-
     let (event_tx, event_rx) = mpsc::channel::<SessionEvent>(256);
 
     let spawned = match cli
@@ -408,22 +441,12 @@ pub async fn spawn_session(
     {
         Ok(spawned) => spawned,
         Err(err) => {
-            let _ = db.update_session_status(&session_id, "failed");
-            let _ = db
-                .update_failure_reason(
-                    &session_id,
-                    normalize_failure_reason(Some(&err)).as_deref(),
-                );
-            if let Some(worktree_service) = &worktree_service {
-                let _ = worktree_service.remove_worktree_for_session(&session_id);
-                let _ = worktree_service.prune_worktrees();
-            }
-            let _ = app.emit("session-error", (&session_id, err.clone()));
-            return Err(err);
+            let normalized = normalize_spawn_session_error(&err, &execution_dir);
+            let _ = app.emit("session-error", (&session_id, normalized.clone()));
+            cleanup_failed_spawn_attempt(&db, worktree_service.as_ref(), &session_id);
+            return Err(normalized);
         }
     };
-
-    let _ = db.begin_run_attempt(&session_id, &run_id);
 
     let sequence = spawned.seq.clone();
     let supervisor = session_supervisor(manager.inner()).await;
@@ -439,6 +462,8 @@ pub async fn spawn_session(
         runtime,
         event_rx,
     );
+
+    let _ = app.emit("session-started", &session_id);
 
     Ok(session_id)
 }
@@ -708,7 +733,8 @@ pub async fn delete_session(
 #[cfg(test)]
 mod tests {
     use super::{
-        project_dashboard_rows, resolve_execution_dir_with_worktree, resolve_working_dir,
+        normalize_spawn_session_error, project_dashboard_rows, resolve_execution_dir_with_worktree,
+        resolve_working_dir,
     };
     use crate::db::SessionDashboardRow;
     use crate::session::projection::DASHBOARD_STATUS_FAILED;
@@ -828,6 +854,30 @@ mod tests {
                 .unwrap_or_default()
                 .contains("Worktree creation failed"),
             "expected explicit worktree creation fallback message"
+        );
+    }
+
+    #[test]
+    fn normalize_spawn_error_keeps_working_dir_validation_messages() {
+        let message = "Working directory does not exist: /tmp/missing";
+        let normalized = normalize_spawn_session_error(message, "/tmp/missing");
+        assert_eq!(normalized, message);
+    }
+
+    #[test]
+    fn normalize_spawn_error_wraps_spawn_failures_with_actionable_context() {
+        let normalized = normalize_spawn_session_error(
+            "Failed to spawn Claude CLI in '/tmp/run': No such file or directory (os error 2)",
+            "/tmp/run",
+        );
+
+        assert!(
+            normalized.starts_with("Failed to launch Claude CLI in '/tmp/run':"),
+            "expected normalized actionable launch failure"
+        );
+        assert!(
+            normalized.contains("Verify the working directory and CLI configuration, then retry."),
+            "expected retry guidance in normalized launch failure"
         );
     }
 }

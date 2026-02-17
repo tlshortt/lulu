@@ -185,7 +185,12 @@ impl ClaudeCli {
 
         let mut child = command
             .spawn()
-            .map_err(|e| format!("Failed to spawn: {}", e))?;
+            .map_err(|e| {
+                format!(
+                    "Failed to spawn Claude CLI in '{}': {}",
+                    working_dir, e
+                )
+            })?;
 
         let stdout = child.stdout.take().expect("stdout not captured");
         let stderr = child.stderr.take().expect("stderr not captured");
