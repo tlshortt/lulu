@@ -781,6 +781,9 @@ mod tests {
             last_activity_at: None,
             failure_reason: Some("  runtime\nerror ".to_string()),
             worktree_path: None,
+            restored: false,
+            restored_at: None,
+            recovery_hint: false,
         }];
 
         let projected = project_dashboard_rows(rows);

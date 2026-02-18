@@ -1,8 +1,8 @@
 use tauri_app_lib::commands::session::reconcile_sessions_on_startup;
 use tauri_app_lib::db::{init_database, Session, SessionDashboardRow};
 use tauri_app_lib::session::projection::{
-    normalize_dashboard_status, project_dashboard_row, DASHBOARD_STATUS_COMPLETED, DASHBOARD_STATUS_FAILED,
-    DASHBOARD_STATUS_RUNNING,
+    normalize_dashboard_status, project_dashboard_row, DASHBOARD_STATUS_COMPLETED,
+    DASHBOARD_STATUS_FAILED, DASHBOARD_STATUS_INTERRUPTED, DASHBOARD_STATUS_RUNNING,
 };
 use tauri_app_lib::session::WorktreeService;
 use tempfile::tempdir;
@@ -37,10 +37,11 @@ fn init_repo() -> tempfile::TempDir {
 
 #[test]
 fn projection_maps_internal_terminal_states_to_failed() {
-    for status in ["failed", "error", "killed", "interrupted", "crashed", "aborted"] {
+    for status in ["failed", "error", "killed", "crashed", "aborted"] {
         assert_eq!(normalize_dashboard_status(status), DASHBOARD_STATUS_FAILED);
     }
 
+    assert_eq!(normalize_dashboard_status("interrupted"), DASHBOARD_STATUS_INTERRUPTED);
     assert_eq!(normalize_dashboard_status("completed"), DASHBOARD_STATUS_COMPLETED);
     assert_eq!(normalize_dashboard_status("running"), DASHBOARD_STATUS_RUNNING);
 }
@@ -55,6 +56,9 @@ fn projection_normalizes_dashboard_rows_to_locked_statuses() {
         last_activity_at: None,
         failure_reason: Some("  one\nline\tfailure reason  ".to_string()),
         worktree_path: None,
+        restored: false,
+        restored_at: None,
+        recovery_hint: false,
     };
     let failed_projection = project_dashboard_row(failed);
     assert_eq!(failed_projection.status, DASHBOARD_STATUS_FAILED);
@@ -68,6 +72,9 @@ fn projection_normalizes_dashboard_rows_to_locked_statuses() {
         last_activity_at: None,
         failure_reason: Some("should disappear".to_string()),
         worktree_path: None,
+        restored: false,
+        restored_at: None,
+        recovery_hint: false,
     };
     let completed_projection = project_dashboard_row(completed);
     assert_eq!(completed_projection.status, DASHBOARD_STATUS_COMPLETED);

@@ -38,6 +38,20 @@ pub struct SessionDashboardRow {
     pub last_activity_at: Option<String>,
     pub failure_reason: Option<String>,
     pub worktree_path: Option<String>,
+    pub restored: bool,
+    pub restored_at: Option<String>,
+    pub recovery_hint: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionHistoryEvent {
+    pub id: String,
+    pub session_id: String,
+    pub run_id: String,
+    pub seq: i64,
+    pub event_type: String,
+    pub payload_json: serde_json::Value,
+    pub timestamp: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,7 +237,16 @@ impl Database {
         let conn = self.conn.lock().map_err(|_| DbError::Lock)?;
 
         let mut stmt = conn.prepare(
-            "SELECT id, name, status, created_at, last_activity_at, failure_reason, worktree_path
+            "SELECT id,
+                    name,
+                    status,
+                    created_at,
+                    last_activity_at,
+                    failure_reason,
+                    worktree_path,
+                    restored,
+                    restored_at,
+                    recovery_hint
              FROM sessions
              ORDER BY created_at DESC",
         )?;
@@ -237,6 +260,9 @@ impl Database {
                 last_activity_at: row.get(4)?,
                 failure_reason: row.get(5)?,
                 worktree_path: row.get(6)?,
+                restored: row.get::<_, i64>(7)? != 0,
+                restored_at: row.get(8)?,
+                recovery_hint: row.get::<_, i64>(9)? != 0,
             })
         })?;
 
@@ -293,6 +319,49 @@ impl Database {
 
         tx.commit()?;
         Ok(stale_ids)
+    }
+
+    pub fn mark_sessions_restored(&self, session_ids: &[String], restored_at: &str) -> Result<(), DbError> {
+        if session_ids.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self.conn.lock().map_err(|_| DbError::Lock)?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let mut stmt = tx.prepare(
+            "UPDATE sessions
+             SET restored = 1,
+                 restored_at = ?1,
+                 recovery_hint = 1,
+                 updated_at = ?1
+             WHERE id = ?2",
+        )?;
+
+        for session_id in session_ids {
+            stmt.execute(params![restored_at, session_id])?;
+        }
+        drop(stmt);
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn clear_restored_metadata(&self, session_id: &str) -> Result<(), DbError> {
+        let mut conn = self.conn.lock().map_err(|_| DbError::Lock)?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        tx.execute(
+            "UPDATE sessions
+             SET restored = 0,
+                 restored_at = NULL,
+                 recovery_hint = 0,
+                 updated_at = ?1
+             WHERE id = ?2 AND (restored = 1 OR recovery_hint = 1)",
+            params![chrono::Utc::now().to_rfc3339(), session_id],
+        )?;
+
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn transition_session_to_interrupting(&self, id: &str) -> Result<bool, DbError> {
@@ -437,5 +506,75 @@ impl Database {
         }
 
         Ok(messages)
+    }
+
+    pub fn insert_session_event(
+        &self,
+        session_id: &str,
+        run_id: &str,
+        seq: u64,
+        event_type: &str,
+        payload_json: &serde_json::Value,
+        timestamp: &str,
+    ) -> Result<(), DbError> {
+        let mut conn = self.conn.lock().map_err(|_| DbError::Lock)?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        tx.execute(
+            "INSERT INTO session_events (id, session_id, run_id, seq, event_type, payload_json, timestamp)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(session_id, run_id, seq) DO NOTHING",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                session_id,
+                run_id,
+                seq as i64,
+                event_type,
+                payload_json.to_string(),
+                timestamp,
+            ],
+        )?;
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn list_session_history(&self, session_id: &str) -> Result<Vec<SessionHistoryEvent>, DbError> {
+        let conn = self.conn.lock().map_err(|_| DbError::Lock)?;
+
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, run_id, seq, event_type, payload_json, timestamp
+             FROM session_events
+             WHERE session_id = ?1
+             ORDER BY timestamp ASC, seq ASC, id ASC",
+        )?;
+
+        let rows = stmt.query_map(params![session_id], |row| {
+            let payload_raw: String = row.get(5)?;
+            let payload_json = serde_json::from_str(&payload_raw).map_err(|err| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    payload_raw.len(),
+                    rusqlite::types::Type::Text,
+                    Box::new(err),
+                )
+            })?;
+
+            Ok(SessionHistoryEvent {
+                id: row.get(0)?,
+                session_id: row.get(1)?,
+                run_id: row.get(2)?,
+                seq: row.get(3)?,
+                event_type: row.get(4)?,
+                payload_json,
+                timestamp: row.get(6)?,
+            })
+        })?;
+
+        let mut events = Vec::new();
+        for event in rows {
+            events.push(event?);
+        }
+
+        Ok(events)
     }
 }
