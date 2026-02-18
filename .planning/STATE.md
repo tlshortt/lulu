@@ -15,14 +15,14 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 **Current Plan:** 2
 **Total Plans in Phase:** 2
 **Status:** Phase complete — ready for verification
-**Last Activity:** 2026-02-17
+**Last Activity:** 2026-02-18
 
 Phase: 5 of 6 (Session Lifecycle Control)
 Plan: 0 of 2 (not started)
 Status: Ready to plan Phase 5; Phase 4 intentionally scrapped
 Last activity: 2026-02-16 — Rolled codebase back to post-Phase-3 commit and removed Phase 4 scope
 
-**Progress:** [██████████] 100%
+**Progress:** [██████████] 95%
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Last activity: 2026-02-16 — Rolled codebase back to post-Phase-3 commit and re
 | Phase 05 P01 | 5 min | 2 tasks | 8 files |
 | Phase 05 P02 | 6 min | 3 tasks | 7 files |
 | Phase 05 P03 | 3 min | 3 tasks | 7 files |
+| Phase 06 P01 | 5 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -92,6 +93,9 @@ Recent decisions affecting current work:
 - [Phase 05]: Keep interrupt feedback compact in rows (chip + spinner) and expose richer lifecycle actions in row/detail controls.
 - [Phase 05]: Normalize spawn failures in the frontend store so the modal always receives user-actionable launch errors.
 - [Phase 05]: Delete partially-created session/worktree records on backend spawn failure to keep retries clean and deterministic.
+- [Phase 06]: Persist every canonical runtime event into session_events keyed by (session_id, run_id, seq) to avoid resume-attempt collisions.
+- [Phase 06]: Startup reconciliation now marks stale starting/running sessions as restored with recovery hints instead of rewriting status to failed.
+- [Phase 06]: Expose list_session_history ordered by timestamp, seq, and id for deterministic replay after restart.
 
 ### Pending Todos
 
@@ -106,8 +110,8 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-**Last session:** 2026-02-17T00:50:00.037Z
-**Stopped At:** Completed 05-03-PLAN.md
+**Last session:** 2026-02-18T02:59:58.371Z
+**Stopped At:** Completed 06-01-PLAN.md
 **Resume File:** None
 
 ---
