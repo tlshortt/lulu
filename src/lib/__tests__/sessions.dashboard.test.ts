@@ -62,6 +62,8 @@ vi.mock("@tauri-apps/api/core", () => ({
 import {
   bootstrapInitialSessions,
   dashboardRows,
+  dashboardSortMode,
+  dashboardSortPreference,
   interruptSession,
   initialSessionsHydrated,
   initialSessionsLoadError,
@@ -204,7 +206,7 @@ describe("sessions dashboard projection", () => {
     ]);
   });
 
-  it("persists user-selected sort while startup still defaults to active-first", () => {
+  it("hands off startup sort lock to remembered preference after hydration", async () => {
     setDashboardSortMode("oldest");
     expect(window.localStorage.getItem("lulu:dashboard-sort-mode")).toBe(
       "oldest",
@@ -212,28 +214,68 @@ describe("sessions dashboard projection", () => {
 
     resetSessionEventStateForTests();
 
+    expect(get(dashboardSortPreference)).toBe("oldest");
+    expect(get(dashboardSortMode)).toBe("active-first-then-recent");
+
+    let resolveListSessions: ((value: unknown) => void) | undefined;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "list_sessions") {
+        return new Promise((resolve) => {
+          resolveListSessions = resolve;
+        });
+      }
+
+      if (command === "list_dashboard_sessions") {
+        return Promise.resolve([]);
+      }
+
+      if (command === "list_session_messages") {
+        return Promise.resolve([]);
+      }
+
+      if (command === "list_session_history") {
+        return Promise.resolve([]);
+      }
+
+      return Promise.resolve(null);
+    });
+
+    const bootstrap = bootstrapInitialSessions();
+    await Promise.resolve();
+
+    expect(get(dashboardSortMode)).toBe("active-first-then-recent");
+
+    resolveListSessions?.([]);
+    await bootstrap;
+
+    expect(get(dashboardSortMode)).toBe("oldest");
+
     sessions.set([
       {
-        id: "terminal-new",
-        name: "Terminal New",
+        id: "completed-old",
+        name: "Completed Old",
         status: "completed",
-        working_dir: "/tmp/terminal-new",
-        created_at: "2026-01-01T00:09:00Z",
+        working_dir: "/tmp/completed-old",
+        created_at: "2026-01-01T00:01:00Z",
         updated_at: "2026-01-01T00:09:00Z",
       },
       {
-        id: "running-old",
-        name: "Running Old",
+        id: "running-new",
+        name: "Running New",
         status: "running",
-        working_dir: "/tmp/running-old",
-        created_at: "2026-01-01T00:01:00Z",
+        working_dir: "/tmp/running-new",
+        created_at: "2026-01-01T00:09:00Z",
         updated_at: "2026-01-01T00:09:00Z",
       },
     ]);
 
     expect(readDashboardRows().map((row) => row.id)).toEqual([
-      "running-old",
-      "terminal-new",
+      "completed-old",
+      "running-new",
+    ]);
+    expect(readDashboardRows().map((row) => row.id)).not.toEqual([
+      "running-new",
+      "completed-old",
     ]);
   });
 
