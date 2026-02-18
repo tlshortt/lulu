@@ -15,6 +15,9 @@ pub struct DashboardSessionProjection {
     pub created_at: String,
     pub last_activity_at: Option<String>,
     pub failure_reason: Option<String>,
+    pub restored: bool,
+    pub restored_at: Option<String>,
+    pub recovery_hint: bool,
 }
 
 pub fn normalize_dashboard_status(status: &str) -> &'static str {
@@ -72,6 +75,9 @@ pub fn project_dashboard_row(row: SessionDashboardRow) -> DashboardSessionProjec
         created_at: row.created_at,
         last_activity_at: row.last_activity_at,
         failure_reason: projected_reason,
+        restored: row.restored,
+        restored_at: row.restored_at,
+        recovery_hint: row.recovery_hint,
     }
 }
 

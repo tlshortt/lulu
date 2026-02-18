@@ -288,10 +288,7 @@ impl Database {
         }
     }
 
-    pub fn reconcile_stale_inflight_sessions(
-        &self,
-        failure_reason: &str,
-    ) -> Result<Vec<String>, DbError> {
+    pub fn reconcile_stale_inflight_sessions(&self) -> Result<Vec<String>, DbError> {
         let mut conn = self.conn.lock().map_err(|_| DbError::Lock)?;
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
@@ -308,12 +305,12 @@ impl Database {
             let now = chrono::Utc::now().to_rfc3339();
             tx.execute(
                 "UPDATE sessions
-                 SET status = 'failed',
-                     updated_at = ?1,
-                     last_activity_at = ?1,
-                     failure_reason = ?2
+                 SET restored = 1,
+                     restored_at = ?1,
+                     recovery_hint = 1,
+                     updated_at = ?1
                  WHERE status IN ('starting', 'running')",
-                params![now, failure_reason],
+                params![now],
             )?;
         }
 

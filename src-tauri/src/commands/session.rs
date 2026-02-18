@@ -1,4 +1,4 @@
-use crate::db::{Database, Session, SessionDashboardRow, SessionMessage};
+use crate::db::{Database, Session, SessionDashboardRow, SessionHistoryEvent, SessionMessage};
 use crate::session::projection::{normalize_failure_reason, project_dashboard_row, DashboardSessionProjection};
 use crate::session::{ClaudeCli, SessionManager, SessionRuntime, SessionSupervisor, WorktreeService};
 use crate::session::{SessionEvent, SessionEventPayload};
@@ -117,6 +117,17 @@ fn is_terminal_status(status: &str) -> bool {
     TERMINAL_STATUSES.contains(&status)
 }
 
+fn event_type(payload: &SessionEventPayload) -> &'static str {
+    match payload {
+        SessionEventPayload::Message { .. } => "message",
+        SessionEventPayload::Thinking { .. } => "thinking",
+        SessionEventPayload::ToolCall { .. } => "tool_call",
+        SessionEventPayload::ToolResult { .. } => "tool_result",
+        SessionEventPayload::Status { .. } => "status",
+        SessionEventPayload::Error { .. } => "error",
+    }
+}
+
 fn project_dashboard_rows(rows: Vec<SessionDashboardRow>) -> Vec<DashboardSessionProjection> {
     rows.into_iter().map(project_dashboard_row).collect()
 }
@@ -190,6 +201,7 @@ fn launch_session_event_tasks(
     app: AppHandle,
     manager: Arc<Mutex<SessionManager>>,
     session_id: String,
+    run_id: String,
     sequence: Arc<AtomicU64>,
     runtime: Arc<SessionRuntime>,
     mut event_rx: mpsc::Receiver<SessionEvent>,
@@ -201,6 +213,28 @@ fn launch_session_event_tasks(
 
     tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
+            let payload_json = match serde_json::to_value(&event.payload) {
+                Ok(value) => value,
+                Err(err) => json!({ "serialization_error": err.to_string() }),
+            };
+
+            if app_event
+                .state::<Database>()
+                .insert_session_event(
+                    &event.session_id,
+                    &run_id,
+                    event.seq,
+                    event_type(&event.payload),
+                    &payload_json,
+                    &event.timestamp,
+                )
+                .is_ok()
+            {
+                let _ = app_event
+                    .state::<Database>()
+                    .clear_restored_metadata(&event.session_id);
+            }
+
             let frontend_event = to_frontend_session_event(&event);
             let _ = app_event.emit("session-event", frontend_event);
 
@@ -311,13 +345,7 @@ fn launch_session_event_tasks(
 }
 
 pub fn reconcile_sessions_on_startup(db: &Database) -> Result<(), String> {
-    let stale_reason =
-        "Session was still in progress at previous shutdown and was marked failed on restart";
-    let normalized_reason = normalize_failure_reason(Some(stale_reason)).unwrap_or_else(|| {
-        "Session was still in progress at previous shutdown".to_string()
-    });
-
-    db.reconcile_stale_inflight_sessions(&normalized_reason)
+    db.reconcile_stale_inflight_sessions()
         .map_err(|e| format!("Failed to reconcile stale sessions: {}", e))?;
 
     let sessions = db
@@ -458,6 +486,7 @@ pub async fn spawn_session(
         app.clone(),
         manager.inner().clone(),
         session_id.clone(),
+        run_id,
         sequence,
         runtime,
         event_rx,
@@ -596,6 +625,15 @@ pub async fn list_session_messages(
 }
 
 #[tauri::command]
+pub async fn list_session_history(
+    db: State<'_, Database>,
+    id: String,
+) -> Result<Vec<SessionHistoryEvent>, String> {
+    db.list_session_history(&id)
+        .map_err(|e| format!("Failed to list session history: {}", e))
+}
+
+#[tauri::command]
 pub async fn interrupt_session(
     db: State<'_, Database>,
     manager: State<'_, Arc<Mutex<SessionManager>>>,
@@ -678,6 +716,7 @@ pub async fn resume_session(
         app,
         manager.inner().clone(),
         id,
+        run_id,
         spawned.seq,
         runtime,
         event_rx,
