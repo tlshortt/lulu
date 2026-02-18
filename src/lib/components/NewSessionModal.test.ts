@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { writable } from "svelte/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import NewSessionModal from "./NewSessionModal.svelte";
 
@@ -8,6 +9,7 @@ const { spawnSessionMock } = vi.hoisted(() => ({
 
 vi.mock("$lib/stores/sessions", () => ({
   spawnSession: spawnSessionMock,
+  spawnRuntimeDiagnostics: writable(null),
 }));
 
 describe("NewSessionModal", () => {

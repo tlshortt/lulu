@@ -155,6 +155,7 @@
   );
   const canInterrupt = $derived(canInterruptStatus(session?.status ?? ""));
   const canResume = $derived(canResumeStatus(session?.status ?? ""));
+  const resumePromptReady = $derived(resumePrompt.trim().length > 0);
 
   const handleInterrupt = async () => {
     if (!currentSessionId) {
@@ -174,7 +175,7 @@
   };
 
   const handleResume = async () => {
-    if (!currentSessionId || !resumePrompt.trim()) {
+    if (!currentSessionId) {
       return;
     }
 
@@ -260,7 +261,7 @@
           <button
             class="rounded-md border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 text-xs uppercase tracking-[0.08em] text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             type="button"
-            disabled={Boolean(currentOperation) || !resumePrompt.trim()}
+            disabled={Boolean(currentOperation) || !resumePromptReady}
             onclick={handleResume}
           >
             {currentOperation === "resuming" ? "Resuming..." : "Resume"}

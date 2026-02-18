@@ -27,6 +27,15 @@ describe("MainArea", () => {
     expect(screen.getByText("⌘ + N")).toBeTruthy();
   });
 
+  it("does not show empty state when a session is active but list is stale", () => {
+    activeSessionId.set("pending-1");
+
+    render(MainArea);
+
+    expect(screen.queryByText("No active sessions")).toBeNull();
+    expect(screen.getByText("Status: unknown")).toBeTruthy();
+  });
+
   it("renders SessionOutput when sessions exist", () => {
     sessions.set([
       {
@@ -66,7 +75,7 @@ describe("MainArea", () => {
     ).toBeTruthy();
   });
 
-  it("suppresses transient session content before initial hydration", () => {
+  it("shows session output when active session exists before hydration completes", () => {
     initialSessionsHydrated.set(false);
     sessions.set([
       {
@@ -82,11 +91,12 @@ describe("MainArea", () => {
 
     render(MainArea);
 
-    expect(screen.getByText("Loading sessions...")).toBeTruthy();
+    expect(screen.queryByText("Loading sessions...")).toBeNull();
     expect(screen.queryByText("No active sessions")).toBeNull();
     expect(
       screen.queryByText("Double-click to open selected session output"),
     ).toBeNull();
+    expect(screen.getByText("Status: running")).toBeTruthy();
   });
 
   it("shows load error when initial fetch fails", () => {

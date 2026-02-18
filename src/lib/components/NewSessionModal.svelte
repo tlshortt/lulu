@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { spawnSession } from "$lib/stores/sessions";
+  import { spawnRuntimeDiagnostics, spawnSession } from "$lib/stores/sessions";
 
   const { open = false, onClose = () => {} } = $props<{
     open?: boolean;
@@ -164,6 +164,52 @@
             {error}
           </div>
         {/if}
+
+        <details
+          class="rounded-md border border-border bg-background/30 px-3 py-2 text-xs text-foreground/70"
+        >
+          <summary
+            class="cursor-pointer select-none font-semibold uppercase tracking-[0.08em] text-foreground/60"
+          >
+            Runtime diagnostics
+          </summary>
+          {#if $spawnRuntimeDiagnostics}
+            <div class="mt-2 space-y-1 font-mono">
+              <div>Outcome: {$spawnRuntimeDiagnostics.outcome}</div>
+              <div>
+                Session ID: {$spawnRuntimeDiagnostics.session_id ?? "(none)"}
+              </div>
+              <div>Spawn: {$spawnRuntimeDiagnostics.spawn_duration_ms}ms</div>
+              <div>
+                Refresh: {$spawnRuntimeDiagnostics.refresh_duration_ms ?? 0}ms ({$spawnRuntimeDiagnostics.refresh_status})
+              </div>
+              <div>Total: {$spawnRuntimeDiagnostics.total_duration_ms}ms</div>
+              <div>
+                Store sessions: {$spawnRuntimeDiagnostics.sessions_count}
+              </div>
+              <div>
+                Has session in store: {$spawnRuntimeDiagnostics.has_session_in_store
+                  ? "yes"
+                  : "no"}
+              </div>
+              <div>
+                Active session: {$spawnRuntimeDiagnostics.active_session_id ??
+                  "(none)"}
+              </div>
+              <div>
+                Dashboard selected: {$spawnRuntimeDiagnostics.dashboard_selected_session_id ??
+                  "(none)"}
+              </div>
+              {#if $spawnRuntimeDiagnostics.error_message}
+                <div class="text-destructive">
+                  Error: {$spawnRuntimeDiagnostics.error_message}
+                </div>
+              {/if}
+            </div>
+          {:else}
+            <div class="mt-2 text-foreground/55">No attempts yet.</div>
+          {/if}
+        </details>
 
         <div class="flex items-center justify-end gap-3 pt-2">
           <button

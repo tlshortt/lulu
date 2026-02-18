@@ -91,6 +91,14 @@ interface StoredSessionHistoryEvent {
   timestamp: string;
 }
 
+interface LegacySessionMessage {
+  id: string;
+  session_id: string;
+  role: string;
+  content: string;
+  timestamp: string;
+}
+
 const messageBuffers: MessageBuffers = {};
 const loadedSessionHistory = new Set<string>();
 const pendingSpawnSessionIds = new Set<string>();
@@ -729,10 +737,13 @@ export async function loadSessions() {
     ),
   ]);
 
-  const dashboardById = new Map(dashboard.map((row) => [row.id, row]));
+  const sessionList = Array.isArray(data) ? data : [];
+  const dashboardRows = Array.isArray(dashboard) ? dashboard : [];
+
+  const dashboardById = new Map(dashboardRows.map((row) => [row.id, row]));
   const current = get(sessions);
   const currentById = new Map(current.map((session) => [session.id, session]));
-  const rows: Session[] = data.map((session) => {
+  const rows: Session[] = sessionList.map((session) => {
     const projection = dashboardById.get(session.id);
     return {
       ...session,
@@ -746,7 +757,7 @@ export async function loadSessions() {
     };
   });
 
-  for (const session of data) {
+  for (const session of sessionList) {
     pendingSpawnSessionIds.delete(session.id);
   }
 
@@ -767,12 +778,123 @@ export async function loadSessions() {
     (current) => current ?? rows[0]?.id ?? null,
   );
 
-  for (const session of data) {
+  for (const session of sessionList) {
     if (normalizeStatus(session.status) !== "running") {
       void loadSessionHistory(session.id);
     }
   }
 }
+
+const toHistoryEvents = (
+  sessionId: string,
+  history: StoredSessionHistoryEvent[],
+): SessionEvent[] =>
+  history
+    .map((event): SessionEvent | null => {
+      const payloadType = event.payload_json?.type;
+      const payloadData = event.payload_json?.data;
+      if (typeof payloadType !== "string" || !payloadData) {
+        return null;
+      }
+
+      const base = {
+        session_id: sessionId,
+        seq: event.seq,
+        timestamp: event.timestamp,
+      };
+
+      if (payloadType === "message") {
+        return {
+          type: "message",
+          data: {
+            ...base,
+            content: String(payloadData.content ?? ""),
+            complete: true,
+          },
+        };
+      }
+
+      if (payloadType === "thinking") {
+        return {
+          type: "thinking",
+          data: {
+            ...base,
+            content: String(payloadData.content ?? ""),
+          },
+        };
+      }
+
+      if (payloadType === "tool_call") {
+        return {
+          type: "tool_call",
+          data: {
+            ...base,
+            call_id:
+              typeof payloadData.call_id === "string"
+                ? payloadData.call_id
+                : undefined,
+            tool_name: String(payloadData.tool_name ?? "unknown"),
+            args: payloadData.args,
+          },
+        };
+      }
+
+      if (payloadType === "tool_result") {
+        return {
+          type: "tool_result",
+          data: {
+            ...base,
+            call_id:
+              typeof payloadData.call_id === "string"
+                ? payloadData.call_id
+                : undefined,
+            tool_name:
+              typeof payloadData.tool_name === "string"
+                ? payloadData.tool_name
+                : undefined,
+            result: payloadData.result,
+          },
+        };
+      }
+
+      if (payloadType === "status") {
+        return {
+          type: "status",
+          data: {
+            ...base,
+            status: normalizeStatus(String(payloadData.status ?? "starting")),
+          },
+        };
+      }
+
+      if (payloadType === "error") {
+        return {
+          type: "error",
+          data: {
+            ...base,
+            error: String(payloadData.message ?? payloadData.error ?? ""),
+          },
+        };
+      }
+
+      return null;
+    })
+    .filter((event): event is SessionEvent => event !== null);
+
+const toLegacyHistoryEvents = (
+  sessionId: string,
+  messages: LegacySessionMessage[],
+): SessionEvent[] =>
+  messages.map((message, index) => ({
+    type: "message",
+    data: {
+      session_id: sessionId,
+      seq: index + 1,
+      timestamp: message.timestamp,
+      content: String(message.content ?? ""),
+      complete: true,
+    },
+  }));
 
 export async function bootstrapInitialSessions() {
   beginInitialSessionsHydration();
@@ -793,16 +915,31 @@ export async function loadSessionHistory(sessionId: string) {
     return;
   }
 
-  const history = await invoke<StoredSessionHistoryEvent[]>(
+  const historyResult = await invoke<StoredSessionHistoryEvent[] | null>(
     "list_session_history",
     {
       id: sessionId,
     },
-  );
+  ).catch(() => null);
+
+  const history = Array.isArray(historyResult) ? historyResult : [];
+  let historyEvents = toHistoryEvents(sessionId, history);
+
+  if (historyEvents.length === 0) {
+    const legacyResult = await invoke<LegacySessionMessage[] | null>(
+      "list_session_messages",
+      {
+        id: sessionId,
+      },
+    ).catch(() => null);
+
+    const legacyMessages = Array.isArray(legacyResult) ? legacyResult : [];
+    historyEvents = toLegacyHistoryEvents(sessionId, legacyMessages);
+  }
 
   loadedSessionHistory.add(sessionId);
 
-  if (history.length === 0) {
+  if (historyEvents.length === 0) {
     return;
   }
 
@@ -811,98 +948,6 @@ export async function loadSessionHistory(sessionId: string) {
     if (existing.length > 0) {
       return items;
     }
-
-    const historyEvents: SessionEvent[] = history
-      .map((event): SessionEvent | null => {
-        const payloadType = event.payload_json?.type;
-        const payloadData = event.payload_json?.data;
-        if (typeof payloadType !== "string" || !payloadData) {
-          return null;
-        }
-
-        const base = {
-          session_id: sessionId,
-          seq: event.seq,
-          timestamp: event.timestamp,
-        };
-
-        if (payloadType === "message") {
-          return {
-            type: "message",
-            data: {
-              ...base,
-              content: String(payloadData.content ?? ""),
-              complete: true,
-            },
-          };
-        }
-
-        if (payloadType === "thinking") {
-          return {
-            type: "thinking",
-            data: {
-              ...base,
-              content: String(payloadData.content ?? ""),
-            },
-          };
-        }
-
-        if (payloadType === "tool_call") {
-          return {
-            type: "tool_call",
-            data: {
-              ...base,
-              call_id:
-                typeof payloadData.call_id === "string"
-                  ? payloadData.call_id
-                  : undefined,
-              tool_name: String(payloadData.tool_name ?? "unknown"),
-              args: payloadData.args,
-            },
-          };
-        }
-
-        if (payloadType === "tool_result") {
-          return {
-            type: "tool_result",
-            data: {
-              ...base,
-              call_id:
-                typeof payloadData.call_id === "string"
-                  ? payloadData.call_id
-                  : undefined,
-              tool_name:
-                typeof payloadData.tool_name === "string"
-                  ? payloadData.tool_name
-                  : undefined,
-              result: payloadData.result,
-            },
-          };
-        }
-
-        if (payloadType === "status") {
-          return {
-            type: "status",
-            data: {
-              ...base,
-              status: normalizeStatus(String(payloadData.status ?? "starting")),
-            },
-          };
-        }
-
-        if (payloadType === "error") {
-          return {
-            type: "error",
-            data: {
-              ...base,
-              error: String(payloadData.message ?? payloadData.error ?? ""),
-            },
-          };
-        }
-
-        return null;
-      })
-      .filter((event): event is SessionEvent => event !== null);
 
     return {
       ...items,

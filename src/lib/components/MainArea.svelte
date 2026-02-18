@@ -5,16 +5,63 @@
     dashboardSelectedSessionId,
     initialSessionsLoadError,
     initialSessionsHydrated,
+    spawnRuntimeDiagnostics,
     sessions,
   } from "$lib/stores/sessions";
 
-  const showHydrationGate = $derived(!$initialSessionsHydrated);
+  const showHydrationGate = $derived(
+    !$initialSessionsHydrated && $sessions.length === 0 && !$activeSessionId,
+  );
   const showStartupView = $derived(
-    $initialSessionsHydrated && $sessions.length === 0,
+    $initialSessionsHydrated && $sessions.length === 0 && !$activeSessionId,
   );
   const showSelectionHint = $derived(
     $initialSessionsHydrated && $sessions.length > 0 && !$activeSessionId,
   );
+  const mainView = $derived(
+    showHydrationGate
+      ? "hydration-gate"
+      : showStartupView
+        ? "startup-view"
+        : showSelectionHint
+          ? "selection-hint"
+          : "session-output",
+  );
+  const activeSessionExists = $derived(
+    $activeSessionId
+      ? $sessions.some((session) => session.id === $activeSessionId)
+      : false,
+  );
+  const liveHasSpawnSession = $derived(
+    $spawnRuntimeDiagnostics?.session_id
+      ? $sessions.some(
+          (session) => session.id === $spawnRuntimeDiagnostics?.session_id,
+        )
+      : false,
+  );
+  const SPAWN_DEBUG_MINIMIZED_STORAGE_KEY = "lulu:spawn-debug-minimized";
+  const loadSpawnDebugMinimized = () => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    return (
+      window.localStorage.getItem(SPAWN_DEBUG_MINIMIZED_STORAGE_KEY) === "true"
+    );
+  };
+
+  let spawnDebugMinimized = $state(loadSpawnDebugMinimized());
+
+  $effect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(
+      SPAWN_DEBUG_MINIMIZED_STORAGE_KEY,
+      String(spawnDebugMinimized),
+    );
+  });
 </script>
 
 <section
@@ -90,3 +137,49 @@
     <SessionOutput />
   {/if}
 </section>
+
+{#if $spawnRuntimeDiagnostics}
+  <div
+    class="fixed bottom-4 right-4 z-40 max-w-md rounded-md border border-border bg-background/95 px-3 py-2 text-xs text-foreground/75 shadow-xl"
+  >
+    <div class="flex items-center justify-between gap-3">
+      <div class="font-semibold uppercase tracking-[0.08em] text-foreground/55">
+        Last spawn debug
+      </div>
+      <button
+        class="rounded border border-border/70 bg-background/60 px-2 py-0.5 font-mono text-[10px] text-foreground/75 transition hover:text-foreground"
+        type="button"
+        onclick={() => {
+          spawnDebugMinimized = !spawnDebugMinimized;
+        }}
+      >
+        {spawnDebugMinimized ? "Expand" : "Minimize"}
+      </button>
+    </div>
+
+    {#if spawnDebugMinimized}
+      <div class="mt-1 font-mono">
+        outcome={$spawnRuntimeDiagnostics.outcome} id={$spawnRuntimeDiagnostics.session_id ??
+          "(none)"}
+      </div>
+    {:else}
+      <div class="mt-1 font-mono">
+        outcome={$spawnRuntimeDiagnostics.outcome} id={$spawnRuntimeDiagnostics.session_id ??
+          "(none)"}
+      </div>
+      <div class="font-mono">view={mainView}</div>
+      <div class="font-mono">
+        live: sessions={$sessions.length} active={$activeSessionId ?? "(none)"} selected={$dashboardSelectedSessionId ??
+          "(none)"}
+      </div>
+      <div class="font-mono">
+        live_has_session={liveHasSpawnSession ? "yes" : "no"} refresh={$spawnRuntimeDiagnostics.refresh_status}
+      </div>
+      <div class="font-mono">
+        active_exists={activeSessionExists ? "yes" : "no"} hydrated={$initialSessionsHydrated
+          ? "yes"
+          : "no"}
+      </div>
+    {/if}
+  </div>
+{/if}

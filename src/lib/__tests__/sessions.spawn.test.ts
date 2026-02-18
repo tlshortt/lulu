@@ -35,7 +35,9 @@ vi.mock("@tauri-apps/api/core", () => ({
 import {
   activeSessionId,
   dashboardSelectedSessionId,
+  loadSessions,
   resetSessionEventStateForTests,
+  sessions,
   spawnSession,
 } from "$lib/stores/sessions";
 import { get } from "svelte/store";
@@ -119,6 +121,9 @@ describe("spawn session launch-path behavior", () => {
     expect(id).toBe("session-123");
     expect(get(activeSessionId)).toBe("session-123");
     expect(get(dashboardSelectedSessionId)).toBe("session-123");
+    expect(get(sessions).some((session) => session.id === "session-123")).toBe(
+      true,
+    );
   });
 
   it("allows retry after failed launch without stale session selection", async () => {
@@ -166,5 +171,57 @@ describe("spawn session launch-path behavior", () => {
     expect(retried).toBe("session-456");
     expect(get(activeSessionId)).toBe("session-456");
     expect(get(dashboardSelectedSessionId)).toBe("session-456");
+    expect(get(sessions).some((session) => session.id === "session-456")).toBe(
+      true,
+    );
+  });
+
+  it("keeps spawned session visible when refresh succeeds without new row", async () => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "spawn_session") {
+        return Promise.resolve("session-789");
+      }
+
+      if (command === "list_sessions") {
+        return Promise.resolve([]);
+      }
+
+      if (command === "list_session_messages") {
+        return Promise.resolve([]);
+      }
+
+      return Promise.resolve(null);
+    });
+
+    const id = await spawnSession("Lagging refresh", "Prompt", "/tmp/worktree");
+    expect(id).toBe("session-789");
+    expect(get(sessions).some((session) => session.id === "session-789")).toBe(
+      true,
+    );
+  });
+
+  it("preserves optimistic spawned row across subsequent empty refreshes", async () => {
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "spawn_session") {
+        return Promise.resolve("session-999");
+      }
+
+      if (command === "list_sessions") {
+        return Promise.resolve([]);
+      }
+
+      if (command === "list_session_messages") {
+        return Promise.resolve([]);
+      }
+
+      return Promise.resolve(null);
+    });
+
+    await spawnSession("Sticky session", "Prompt", "/tmp/worktree");
+    await loadSessions();
+
+    expect(get(sessions).some((session) => session.id === "session-999")).toBe(
+      true,
+    );
   });
 });
