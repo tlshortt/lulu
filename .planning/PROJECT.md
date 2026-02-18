@@ -12,20 +12,19 @@ Run and monitor multiple Claude Code instances simultaneously from a single dash
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ Launch multiple named Claude Code sessions that run in parallel — v1.0
+- ✓ Dashboard list view showing all sessions with status and activity context — v1.0
+- ✓ Session live output stream (text, thinking, tool use, tool result) — v1.0
+- ✓ Configurable working directory per session with git worktree isolation — v1.0
+- ✓ Interrupt and resume lifecycle controls with error isolation — v1.0
+- ✓ Durable persistence and full history replay across restarts — v1.0
 
 ### Active
 
-- [ ] Launch multiple named Claude Code sessions that run in parallel
-- [ ] Dashboard list view showing all sessions with name, status (running/completed/failed/interrupted), and progress
-- [ ] Click into any session to view its live streamed output (text, thinking, tool use, tool results)
-- [ ] Each session targets a configurable working directory (same repo, different branches/worktrees)
-- [ ] Auto-approve rules for tool calls (pattern-based: exact match, prefix, wildcard)
-- [ ] Manual approval prompt only for tools not covered by auto-approve rules
-- [ ] Interrupt a running session mid-execution
-- [ ] Continue/resume a completed or interrupted session with a new prompt
-- [ ] Session status visible at a glance: running, waiting for approval, completed, failed, interrupted
-- [ ] Sessions persist across app restarts (SQLite storage)
+- [ ] Define v1.1 milestone scope and refreshed requirement set
+- [ ] Improve launch-time diagnostics and recovery UX for invalid CLI/runtime setup
+- [ ] Add quality-of-life workflow features (templates/presets, richer session insights)
+- [ ] Re-evaluate approval-system direction (reintroduce, redesign, or keep out of scope)
 
 ### Out of Scope
 
@@ -36,13 +35,26 @@ Run and monitor multiple Claude Code instances simultaneously from a single dash
 - Fork sessions — continue/resume is sufficient for v1
 - Draft sessions (compose before running) — direct launch is fine for v1
 
+## Current State
+
+- **Shipped version:** v1.0 MVP (2026-02-18)
+- **Delivery scope:** 5 implemented phases, 21 plans, 56 tasks
+- **Core capability shipped:** Parallel Claude Code mission-control desktop app with isolation, lifecycle controls, and persistence
+- **Archive references:** `.planning/milestones/v1.0-ROADMAP.md`, `.planning/milestones/v1.0-REQUIREMENTS.md`, `.planning/MILESTONES.md`
+
+## Next Milestone Goals
+
+1. Define v1.1 scope from user feedback and day-2 operational needs.
+2. Decide whether approval workflows return as a redesign or remain excluded.
+3. Prioritize usability gains that improve multi-session throughput and reliability.
+
 ## Context
 
 - Inspired by HumanLayer's CodeLayer (Go-based), but built in Rust for performance and because the user prefers Rust
 - The `cc-sdk` Rust crate (v0.5) provides the Claude Code integration: streaming messages, session management, resume capability
 - Typical workflow: kick off 3-5 sessions on different tasks in the same repo (different branches/worktrees), monitor status, approve dangerous tool calls, step in when needed
-- Existing preliminary planning docs (slice-1 through slice-5) provide detailed implementation guidance for the Tauri + cc-sdk integration patterns
 - Sessions are task-oriented: named by what they're doing ("fix auth bug", "add dark mode", "refactor API")
+- Codebase footprint is ~10,211 tracked lines across TypeScript, Svelte, Rust, Python, and Swift sources.
 
 ## Constraints
 
@@ -56,11 +68,11 @@ Run and monitor multiple Claude Code instances simultaneously from a single dash
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Svelte 5 over React | Lighter framework, runes reactivity fits Tauri's event model well | — Pending |
-| Rust + cc-sdk over Go | User preference for Rust, cc-sdk provides native Claude Code integration | — Pending |
-| Auto-approve as default posture | User wants to mostly let Claude run, only intervene for dangerous tools | — Pending |
-| SQLite for persistence | Simple, embedded, no external dependencies, good enough for local app | — Pending |
-| Dashboard-first UI | Status overview is the primary view, detail on click-through | — Pending |
+| Svelte 5 over React | Lighter framework, runes reactivity fits Tauri's event model well | ✓ Good (v1.0 shipped on this stack) |
+| Rust + cc-sdk over Go | User preference for Rust, cc-sdk provides native Claude Code integration | ✓ Good (native runtime + integration goals met) |
+| Auto-approve as default posture | User wants to mostly let Claude run, only intervene for dangerous tools | ⚠ Revisit (approval system removed from v1.0 scope) |
+| SQLite for persistence | Simple, embedded, no external dependencies, good enough for local app | ✓ Good (durable session/events history shipped) |
+| Dashboard-first UI | Status overview is the primary view, detail on click-through | ✓ Good (core mission-control UX validated) |
 
 ---
-*Last updated: 2026-02-14 after initialization*
+*Last updated: 2026-02-18 after v1.0 milestone completion*

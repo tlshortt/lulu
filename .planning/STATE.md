@@ -2,25 +2,25 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-14)
+See: .planning/PROJECT.md (updated 2026-02-18)
 
 **Core value:** Run and monitor multiple Claude Code instances simultaneously from a single dashboard
-**Current focus:** Phase 5 - Session Lifecycle Control (Phase 4 scrapped)
+**Current focus:** Planning next milestone (v1.1)
 
 ## Current Position
 
-**Current Phase:** 5
-**Current Phase Name:** Session Lifecycle Control
+**Current Phase:** Milestone transition
+**Current Phase Name:** v1.0 complete
 **Total Phases:** 6
-**Current Plan:** 2
-**Total Plans in Phase:** 2
-**Status:** Phase complete — ready for verification
+**Current Plan:** 0
+**Total Plans in Phase:** 0
+**Status:** v1.0 milestone complete
 **Last Activity:** 2026-02-18
 
-Phase: 5 of 6 (Session Lifecycle Control)
-Plan: 0 of 2 (not started)
-Status: Ready to plan Phase 5; Phase 4 intentionally scrapped
-Last activity: 2026-02-16 — Rolled codebase back to post-Phase-3 commit and removed Phase 4 scope
+Phase: Milestone complete
+Plan: N/A
+Status: v1.0 archived; ready to start v1.1 planning
+Last activity: 2026-02-18 — Archived v1.0 roadmap/requirements and prepared next milestone handoff
 
 **Progress:** [██████████] 100%
 
@@ -106,7 +106,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Plan Phase 5 with updated dependency chain (Phase 3 -> Phase 5 -> Phase 6).
+- Start `/gsd-new-milestone` to define v1.1 requirements and roadmap.
 
 ### Blockers/Concerns
 
@@ -122,4 +122,4 @@ Recent decisions affecting current work:
 **Resume File:** None
 
 ---
-*Last updated: 2026-02-16 after Phase 4 scope removal and Phase 5 focus handoff*
+*Last updated: 2026-02-18 after v1.0 milestone archival*
