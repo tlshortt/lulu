@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Multi-Session Orchestration** - Parallel sessions with dashboard and git worktree integration
 - [x] **Phase 4: Security & Approval System (Scrapped)** - Removed from active scope
 - [ ] **Phase 5: Session Lifecycle Control** - Interrupt and resume capabilities with error isolation
-- [ ] **Phase 6: Persistence & History** - Session persistence across restarts and history review
+- [x] **Phase 6: Persistence & History** - Session persistence across restarts and history review
 
 ## Phase Details
 
@@ -114,11 +114,12 @@ Plans:
   2. Session history includes all prompts, outputs, tool calls, and approvals
   3. User can review session logs after completion to see what the agent did
   4. Session state (running, waiting, completed, failed, interrupted) persists correctly across restarts
-**Plans**: 2 plans
+**Plans**: 3 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — Backend durable session event timeline + restore-aware startup reconciliation + history API
-- [ ] 06-02-PLAN.md — Frontend restore-aware dashboard sort/badges + full timeline history replay
+- [x] 06-01-PLAN.md — Backend durable session event timeline + restore-aware startup reconciliation + history API
+- [x] 06-02-PLAN.md — Frontend restore-aware dashboard sort/badges + full timeline history replay
+- [x] 06-03-PLAN.md — Gap closure: apply remembered sort preference to active mode after startup lock
 
 ## Progress
 
@@ -132,7 +133,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Multi-Session Orchestration | 5/5 | Complete | 2026-02-16 |
 | 4. Security & Approval System | 0/0 | Scrapped | 2026-02-16 |
 | 5. Session Lifecycle Control | 0/3 | Not started | - |
-| 6. Persistence & History | 0/2 | Not started | - |
+| 6. Persistence & History | 3/3 | Complete | 2026-02-18 |
 
 ---
-*Last updated: 2026-02-16 after Phase 4 scope removal and dependency realignment*
+*Last updated: 2026-02-18 after Phase 6 execution and verification completion*
