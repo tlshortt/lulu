@@ -443,6 +443,7 @@ export const completeInitialSessionsHydration = (
 ) => {
   initialSessionsLoadError.set(error);
   initialSessionsHydrated.set(true);
+  dashboardSortMode.set(get(dashboardSortPreference));
 };
 
 const updateSessionStatus = (
