@@ -22,7 +22,7 @@ Plan: 0 of 2 (not started)
 Status: Ready to plan Phase 5; Phase 4 intentionally scrapped
 Last activity: 2026-02-16 — Rolled codebase back to post-Phase-3 commit and removed Phase 4 scope
 
-**Progress:** [██████████] 95%
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 
@@ -49,6 +49,7 @@ Last activity: 2026-02-16 — Rolled codebase back to post-Phase-3 commit and re
 | Phase 05 P02 | 6 min | 3 tasks | 7 files |
 | Phase 05 P03 | 3 min | 3 tasks | 7 files |
 | Phase 06 P01 | 5 min | 3 tasks | 7 files |
+| Phase 06 P02 | 7 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,9 @@ Recent decisions affecting current work:
 - [Phase 06]: Persist every canonical runtime event into session_events keyed by (session_id, run_id, seq) to avoid resume-attempt collisions.
 - [Phase 06]: Startup reconciliation now marks stale starting/running sessions as restored with recovery hints instead of rewriting status to failed.
 - [Phase 06]: Expose list_session_history ordered by timestamp, seq, and id for deterministic replay after restart.
+- [Phase 06]: Use list_dashboard_sessions metadata merged with list_sessions lifecycle status for restore-aware rows.
+- [Phase 06]: Apply startup active-first dashboard ordering while persisting user sort preference for later interaction.
+- [Phase 06]: Hydrate frontend session timelines from list_session_history payload variants instead of message-only history.
 
 ### Pending Todos
 
@@ -110,8 +114,8 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-**Last session:** 2026-02-18T02:59:58.371Z
-**Stopped At:** Completed 06-01-PLAN.md
+**Last session:** 2026-02-18T03:34:43.302Z
+**Stopped At:** Completed 06-02-PLAN.md
 **Resume File:** None
 
 ---
