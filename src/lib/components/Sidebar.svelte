@@ -4,6 +4,7 @@
   import {
     activeSessionId,
     cliPathOverride,
+    dashboardSortMode,
     dashboardRows,
     dashboardSelectedSessionId,
     interruptSession,
@@ -15,10 +16,11 @@
     resumeSession,
     sessionErrors,
     sessionOperations,
+    setDashboardSortMode,
     sessions,
   } from "$lib/stores/sessions";
   import type { Session } from "$lib/stores/sessions";
-  import type { DashboardStatus } from "$lib/types/session";
+  import type { DashboardSortMode, DashboardStatus } from "$lib/types/session";
 
   const { onNewSession = () => {} } = $props<{ onNewSession?: () => void }>();
 
@@ -182,10 +184,7 @@
   };
 
   const handleResume = async (sessionId: string) => {
-    const prompt = resumePromptsBySessionId[sessionId]?.trim() ?? "";
-    if (!prompt) {
-      return;
-    }
+    const prompt = resumePromptsBySessionId[sessionId] ?? "";
 
     try {
       await resumeSession(sessionId, prompt);
@@ -193,6 +192,18 @@
     } catch (error) {
       console.error("Failed to resume session", error);
     }
+  };
+
+  const handleSortModeChange = (value: string) => {
+    if (
+      value !== "active-first-then-recent" &&
+      value !== "recent" &&
+      value !== "oldest"
+    ) {
+      return;
+    }
+
+    setDashboardSortMode(value as DashboardSortMode);
   };
 </script>
 
@@ -220,7 +231,28 @@
   </div>
 
   <div class="min-h-0 flex-1 overflow-auto px-4">
-    {#if !$initialSessionsHydrated}
+    <div class="mb-3 flex items-center gap-2">
+      <label
+        class="text-[11px] uppercase tracking-[0.18em] text-foreground/45"
+        for="dashboard-sort-mode"
+      >
+        Sort
+      </label>
+      <select
+        id="dashboard-sort-mode"
+        class="rounded-md border border-border bg-background/40 px-2 py-1 text-xs text-foreground outline-none focus:border-ring"
+        value={$dashboardSortMode}
+        onchange={(event) =>
+          handleSortModeChange(
+            (event.currentTarget as HTMLSelectElement).value,
+          )}
+      >
+        <option value="active-first-then-recent">Active first</option>
+        <option value="recent">Most recent</option>
+        <option value="oldest">Oldest first</option>
+      </select>
+    </div>
+    {#if !$initialSessionsHydrated && $sessions.length === 0 && !$activeSessionId}
       <div class="space-y-3 pb-6 text-sm text-foreground/60">
         <div
           class="rounded-md border border-border bg-background/40 px-3 py-2 font-mono"
@@ -295,13 +327,22 @@
                       onclick={(event) => event.stopPropagation()}
                     />
                   {:else}
-                    <span class="truncate font-medium">{row.name}</span>
+                    <span class="truncate font-semibold text-foreground"
+                      >{row.name}</span
+                    >
                   {/if}
                   <span class="shrink-0 text-xs text-foreground/45"
                     >{row.recentActivity}</span
                   >
                 </span>
                 <span class="flex items-center gap-2">
+                  {#if row.restored}
+                    <span
+                      class="inline-flex items-center rounded-full border border-border/70 bg-background/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-foreground/65"
+                    >
+                      Restored
+                    </span>
+                  {/if}
                   <span
                     class={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] ${statusBadgeClass(
                       $sessionOperations[row.id] === "interrupting"
@@ -323,6 +364,11 @@
                       ? "Interrupting..."
                       : row.status}
                   </span>
+                  {#if row.status === "Running" && row.recoveryHint}
+                    <span class="text-[10px] text-foreground/55"
+                      >Recovered on startup</span
+                    >
+                  {/if}
                   {#if row.status === "Failed" && row.failureReason}
                     <span class="truncate text-xs text-foreground/55"
                       >{row.failureReason}</span
