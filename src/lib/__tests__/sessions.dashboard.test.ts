@@ -16,6 +16,14 @@ const { listenMock, invokeMock } = vi.hoisted(() => ({
         return [];
       }
 
+      if (command === "list_session_history") {
+        return [];
+      }
+
+      if (command === "list_dashboard_sessions") {
+        return [];
+      }
+
       return null;
     },
   ),
@@ -28,6 +36,14 @@ const setDefaultInvokeMock = () => {
     }
 
     if (command === "list_session_messages") {
+      return Promise.resolve([]);
+    }
+
+    if (command === "list_session_history") {
+      return Promise.resolve([]);
+    }
+
+    if (command === "list_dashboard_sessions") {
       return Promise.resolve([]);
     }
 
@@ -50,6 +66,7 @@ import {
   initialSessionsHydrated,
   initialSessionsLoadError,
   refreshDashboardNowForTests,
+  setDashboardSortMode,
   resumeSession,
   resetSessionEventStateForTests,
   routeSessionEvent,
@@ -79,6 +96,7 @@ describe("sessions dashboard projection", () => {
     resetSessionEventStateForTests();
     vi.clearAllMocks();
     setDefaultInvokeMock();
+    window.localStorage.removeItem("lulu:dashboard-sort-mode");
     refreshDashboardNowForTests(Date.parse("2026-01-01T00:10:00Z"));
   });
 
@@ -142,43 +160,117 @@ describe("sessions dashboard projection", () => {
     expect(readDashboardRows()[0]?.status).toBe("Failed");
   });
 
-  it("keeps rows newest-first by created_at only", () => {
+  it("applies startup active-first ordering with created_at tie-breaks", () => {
     sessions.set([
       {
-        id: "older",
-        name: "Older",
-        status: "running",
-        working_dir: "/tmp/older",
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:09:58Z",
+        id: "completed-new",
+        name: "Completed New",
+        status: "completed",
+        working_dir: "/tmp/completed-new",
+        created_at: "2026-01-01T00:09:00Z",
+        updated_at: "2026-01-01T00:09:00Z",
       },
       {
-        id: "newer",
-        name: "Newer",
+        id: "running-old",
+        name: "Running Old",
         status: "running",
-        working_dir: "/tmp/newer",
-        created_at: "2026-01-01T00:09:00Z",
+        working_dir: "/tmp/running-old",
+        created_at: "2026-01-01T00:01:00Z",
         updated_at: "2026-01-01T00:10:00Z",
+      },
+      {
+        id: "running-new",
+        name: "Running New",
+        status: "running",
+        working_dir: "/tmp/running-new",
+        created_at: "2026-01-01T00:08:00Z",
+        updated_at: "2026-01-01T00:10:00Z",
+      },
+      {
+        id: "interrupted",
+        name: "Interrupted",
+        status: "interrupted",
+        working_dir: "/tmp/interrupted",
+        created_at: "2026-01-01T00:07:00Z",
+        updated_at: "2026-01-01T00:07:00Z",
       },
     ]);
 
     expect(readDashboardRows().map((row) => row.id)).toEqual([
-      "newer",
-      "older",
+      "running-new",
+      "running-old",
+      "completed-new",
+      "interrupted",
     ]);
+  });
 
-    sessions.update((items) =>
-      items.map((item) =>
-        item.id === "older"
-          ? { ...item, status: "completed", updated_at: "2026-01-01T00:10:00Z" }
-          : item,
-      ),
+  it("persists user-selected sort while startup still defaults to active-first", () => {
+    setDashboardSortMode("oldest");
+    expect(window.localStorage.getItem("lulu:dashboard-sort-mode")).toBe(
+      "oldest",
     );
 
-    expect(readDashboardRows().map((row) => row.id)).toEqual([
-      "newer",
-      "older",
+    resetSessionEventStateForTests();
+
+    sessions.set([
+      {
+        id: "terminal-new",
+        name: "Terminal New",
+        status: "completed",
+        working_dir: "/tmp/terminal-new",
+        created_at: "2026-01-01T00:09:00Z",
+        updated_at: "2026-01-01T00:09:00Z",
+      },
+      {
+        id: "running-old",
+        name: "Running Old",
+        status: "running",
+        working_dir: "/tmp/running-old",
+        created_at: "2026-01-01T00:01:00Z",
+        updated_at: "2026-01-01T00:09:00Z",
+      },
     ]);
+
+    expect(readDashboardRows().map((row) => row.id)).toEqual([
+      "running-old",
+      "terminal-new",
+    ]);
+  });
+
+  it("clears restored badge and recovery hint after first new event", () => {
+    sessions.set([
+      {
+        id: "restored-1",
+        name: "Restored",
+        status: "running",
+        working_dir: "/tmp/restored",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+        restored: true,
+        restored_at: "2026-01-01T00:00:00Z",
+        recovery_hint: true,
+      },
+    ]);
+
+    expect(readDashboardRows()[0]).toMatchObject({
+      restored: true,
+      recoveryHint: true,
+    });
+
+    routeSessionEvent({
+      type: "thinking",
+      data: {
+        session_id: "restored-1",
+        seq: 1,
+        timestamp: "2026-01-01T00:10:00Z",
+        content: "back online",
+      },
+    });
+
+    expect(readDashboardRows()[0]).toMatchObject({
+      restored: false,
+      recoveryHint: false,
+    });
   });
 
   it("formats compact age labels and extracts one-line failure reason", () => {
@@ -245,7 +337,15 @@ describe("sessions dashboard projection", () => {
         });
       }
 
+      if (command === "list_dashboard_sessions") {
+        return Promise.resolve([]);
+      }
+
       if (command === "list_session_messages") {
+        return Promise.resolve([]);
+      }
+
+      if (command === "list_session_history") {
         return Promise.resolve([]);
       }
 
@@ -271,7 +371,15 @@ describe("sessions dashboard projection", () => {
         return Promise.reject(new Error("Backend unavailable"));
       }
 
+      if (command === "list_dashboard_sessions") {
+        return Promise.resolve([]);
+      }
+
       if (command === "list_session_messages") {
+        return Promise.resolve([]);
+      }
+
+      if (command === "list_session_history") {
         return Promise.resolve([]);
       }
 
@@ -336,7 +444,15 @@ describe("sessions dashboard projection", () => {
         return Promise.resolve(get(sessions));
       }
 
+      if (command === "list_dashboard_sessions") {
+        return Promise.resolve([]);
+      }
+
       if (command === "list_session_messages") {
+        return Promise.resolve([]);
+      }
+
+      if (command === "list_session_history") {
         return Promise.resolve([]);
       }
 
@@ -375,5 +491,26 @@ describe("sessions dashboard projection", () => {
       cliPathOverride: null,
     });
     expect(get(sessionErrors)).toEqual({});
+  });
+
+  it("surfaces actionable error when resume prompt is empty", async () => {
+    sessions.set([
+      {
+        id: "resume-empty",
+        name: "Resume empty",
+        status: "completed",
+        working_dir: "/tmp/resume",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:10:00Z",
+      },
+    ]);
+
+    await expect(resumeSession("resume-empty", "   ")).rejects.toThrow(
+      "Resume prompt cannot be empty.",
+    );
+
+    expect(get(sessionErrors)["resume-empty"]).toBe(
+      "Resume prompt cannot be empty.",
+    );
   });
 });

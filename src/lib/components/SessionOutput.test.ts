@@ -103,6 +103,48 @@ describe("SessionOutput", () => {
     expect(screen.getByText("sample error")).toBeTruthy();
   });
 
+  it("replays non-message timeline events from restored history", () => {
+    setSessionState([
+      {
+        type: "tool_call",
+        data: {
+          session_id: sessionId,
+          seq: 1,
+          timestamp: "2026-01-01T00:00:01Z",
+          call_id: "call-history-1",
+          tool_name: "write_file",
+          args: { file: "README.md" },
+        },
+      },
+      {
+        type: "tool_result",
+        data: {
+          session_id: sessionId,
+          seq: 2,
+          timestamp: "2026-01-01T00:00:02Z",
+          call_id: "call-history-1",
+          tool_name: "write_file",
+          result: { ok: true },
+        },
+      },
+      {
+        type: "status",
+        data: {
+          session_id: sessionId,
+          seq: 3,
+          timestamp: "2026-01-01T00:00:03Z",
+          status: "completed",
+        },
+      },
+    ]);
+
+    render(SessionOutput);
+
+    expect(screen.getByText("Tool: write_file")).toBeTruthy();
+    expect(screen.getByText("Result")).toBeTruthy();
+    expect(screen.getByText("completed")).toBeTruthy();
+  });
+
   it("hides thinking by default and reveals it when toggled", async () => {
     setSessionState([
       {

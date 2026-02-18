@@ -39,8 +39,12 @@ vi.mock("$lib/stores/sessions", async () => {
         status: "Completed",
         recentActivity: "2m",
         createdAt: "2026-01-01T00:00:00Z",
+        restored: false,
+        recoveryHint: false,
       },
     ]),
+    dashboardSortMode: writable("active-first-then-recent"),
+    setDashboardSortMode: vi.fn(),
     loadSessionHistory: vi.fn(async () => {}),
     interruptSession: vi.fn(async () => {}),
     renameSession: vi.fn(async () => {}),
@@ -87,6 +91,8 @@ describe("Sidebar dashboard interactions", () => {
         status: "Completed",
         recentActivity: "2m",
         createdAt: "2026-01-01T00:00:00Z",
+        restored: false,
+        recoveryHint: false,
       },
     ]);
     sessionStores.activeSessionId.set(null);
@@ -141,6 +147,8 @@ describe("Sidebar dashboard interactions", () => {
         recentActivity: "5s",
         failureReason: "Command exited with status 2",
         createdAt: "2026-01-01T00:00:00Z",
+        restored: false,
+        recoveryHint: false,
       },
     ]);
     sessionStores.sessions.set([
@@ -172,6 +180,8 @@ describe("Sidebar dashboard interactions", () => {
         status: "Running",
         recentActivity: "8s",
         createdAt: "2026-01-01T00:00:00Z",
+        restored: false,
+        recoveryHint: false,
       },
     ]);
     sessionStores.sessions.set([
@@ -203,6 +213,8 @@ describe("Sidebar dashboard interactions", () => {
         status: "Running",
         recentActivity: "1s",
         createdAt: "2026-01-01T00:00:00Z",
+        restored: false,
+        recoveryHint: false,
       },
     ]);
     sessionStores.sessions.set([
@@ -230,6 +242,8 @@ describe("Sidebar dashboard interactions", () => {
         status: "Completed",
         recentActivity: "2s",
         createdAt: "2026-01-01T00:00:00Z",
+        restored: false,
+        recoveryHint: false,
       },
     ]);
 
@@ -238,13 +252,13 @@ describe("Sidebar dashboard interactions", () => {
     });
   });
 
-  it("hides dashboard rows until initial session hydration completes", () => {
+  it("keeps existing rows visible while hydration is still pending", () => {
     sessionStores.initialSessionsHydrated.set(false);
 
     render(Sidebar);
 
-    expect(screen.getByText("Loading sessions...")).toBeTruthy();
-    expect(screen.queryByText("Build dashboard")).toBeNull();
+    expect(screen.queryByText("Loading sessions...")).toBeNull();
+    expect(screen.getByText("Build dashboard")).toBeTruthy();
   });
 
   it("shows initial load error in empty sidebar state", () => {
@@ -280,6 +294,49 @@ describe("Sidebar dashboard interactions", () => {
         "Updated name",
       );
     });
+  });
+
+  it("shows restored badge and startup recovery hint for restored running rows", () => {
+    (
+      sessionStores.dashboardRows as unknown as {
+        set: (value: unknown) => void;
+      }
+    ).set([
+      {
+        id: "restored-1",
+        name: "Recovered run",
+        status: "Running",
+        recentActivity: "3s",
+        createdAt: "2026-01-01T00:00:00Z",
+        restored: true,
+        recoveryHint: true,
+      },
+    ]);
+    sessionStores.sessions.set([
+      {
+        id: "restored-1",
+        name: "Recovered run",
+        status: "running",
+        working_dir: "/tmp/project",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+
+    render(Sidebar);
+
+    expect(screen.getByText("Restored")).toBeTruthy();
+    expect(screen.getByText("Recovered on startup")).toBeTruthy();
+  });
+
+  it("wires sort control changes to store sort mode", async () => {
+    render(Sidebar);
+
+    await fireEvent.change(screen.getByLabelText("Sort"), {
+      target: { value: "oldest" },
+    });
+
+    expect(sessionStores.setDashboardSortMode).toHaveBeenCalledWith("oldest");
   });
 
   it("confirms row interrupt with required copy and invokes store action", async () => {
