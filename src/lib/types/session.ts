@@ -75,6 +75,11 @@ export type DashboardStatus =
   | "Interrupted"
   | "Failed";
 
+export type DashboardSortMode =
+  | "active-first-then-recent"
+  | "recent"
+  | "oldest";
+
 export type SessionOperationStatus = "interrupting" | "resuming";
 
 export interface DashboardSessionRow {
@@ -84,4 +89,6 @@ export interface DashboardSessionRow {
   recentActivity: string;
   failureReason?: string;
   createdAt: string;
+  restored: boolean;
+  recoveryHint: boolean;
 }

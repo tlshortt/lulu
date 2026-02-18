@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { derived, get, writable } from "svelte/store";
 import type {
   DashboardSessionRow,
+  DashboardSortMode,
   DashboardStatus,
   SessionDebugEvent,
   SessionEvent,
@@ -16,6 +17,11 @@ export interface Session {
   working_dir: string;
   created_at: string;
   updated_at: string;
+  last_activity_at?: string | null;
+  failure_reason?: string | null;
+  restored?: boolean;
+  restored_at?: string | null;
+  recovery_hint?: boolean;
 }
 
 export const sessions = writable<Session[]>([]);
@@ -39,17 +45,55 @@ export const sessionOperations = writable<
 >({});
 export const sessionErrors = writable<Record<string, string>>({});
 
+export interface SpawnRuntimeDiagnostics {
+  started_at: string;
+  finished_at: string;
+  outcome: "success" | "spawn_failed";
+  session_id: string | null;
+  spawn_duration_ms: number;
+  refresh_duration_ms: number | null;
+  total_duration_ms: number;
+  refresh_status: "succeeded" | "failed" | "skipped";
+  sessions_count: number;
+  has_session_in_store: boolean;
+  active_session_id: string | null;
+  dashboard_selected_session_id: string | null;
+  error_message: string | null;
+}
+
+export const spawnRuntimeDiagnostics = writable<SpawnRuntimeDiagnostics | null>(
+  null,
+);
+
 type MessageBuffers = Record<string, string>;
-interface StoredSessionMessage {
+interface DashboardSessionProjection {
+  id: string;
+  name: string;
+  status: string;
+  created_at: string;
+  last_activity_at?: string | null;
+  failure_reason?: string | null;
+  restored?: boolean;
+  restored_at?: string | null;
+  recovery_hint?: boolean;
+}
+
+interface StoredSessionHistoryEvent {
   id: string;
   session_id: string;
-  role: string;
-  content: string;
+  run_id: string;
+  seq: number;
+  event_type: string;
+  payload_json: {
+    type?: string;
+    data?: Record<string, unknown>;
+  };
   timestamp: string;
 }
 
 const messageBuffers: MessageBuffers = {};
 const loadedSessionHistory = new Set<string>();
+const pendingSpawnSessionIds = new Set<string>();
 let listenerInitialized = false;
 let listenerInitializing = false;
 let sequenceCounter = 0;
@@ -66,6 +110,8 @@ const FAILURE_STATUSES = new Set([
 const dashboardNow = writable(Date.now());
 const LIST_SESSIONS_TIMEOUT_MS = 1500;
 const SPAWN_SESSION_TIMEOUT_MS = 15000;
+const DASHBOARD_SORT_KEY = "lulu:dashboard-sort-mode";
+const STARTUP_SORT_MODE: DashboardSortMode = "active-first-then-recent";
 
 if (typeof window !== "undefined") {
   setInterval(() => {
@@ -96,6 +142,16 @@ const loadString = (key: string, fallback = "") => {
   return window.localStorage.getItem(key) ?? fallback;
 };
 
+const isDashboardSortMode = (value: string): value is DashboardSortMode =>
+  value === "active-first-then-recent" ||
+  value === "recent" ||
+  value === "oldest";
+
+const loadDashboardSortPreference = (): DashboardSortMode => {
+  const value = loadString(DASHBOARD_SORT_KEY, STARTUP_SORT_MODE);
+  return isDashboardSortMode(value) ? value : STARTUP_SORT_MODE;
+};
+
 export const showThinking = writable<boolean>(
   loadBoolean("lulu:show-thinking", false),
 );
@@ -103,6 +159,10 @@ export const showThinking = writable<boolean>(
 export const cliPathOverride = writable<string>(
   loadString("lulu:cli-path-override", ""),
 );
+export const dashboardSortPreference = writable<DashboardSortMode>(
+  loadDashboardSortPreference(),
+);
+export const dashboardSortMode = writable<DashboardSortMode>(STARTUP_SORT_MODE);
 
 showThinking.subscribe((value) => {
   if (!canUseStorage()) {
@@ -119,6 +179,19 @@ cliPathOverride.subscribe((value) => {
 
   window.localStorage.setItem("lulu:cli-path-override", value);
 });
+
+dashboardSortPreference.subscribe((value) => {
+  if (!canUseStorage()) {
+    return;
+  }
+
+  window.localStorage.setItem(DASHBOARD_SORT_KEY, value);
+});
+
+export const setDashboardSortMode = (mode: DashboardSortMode) => {
+  dashboardSortMode.set(mode);
+  dashboardSortPreference.set(mode);
+};
 
 const nextSeq = () => {
   sequenceCounter += 1;
@@ -192,6 +265,45 @@ const compactAgeLabel = (timestamp: string, now: number) => {
 
 const toSingleLine = (value: string) => value.replace(/\s+/g, " ").trim();
 
+const byCreatedAtDesc = (left: Session, right: Session) => {
+  const dateDelta = toEpoch(right.created_at) - toEpoch(left.created_at);
+  if (dateDelta !== 0) {
+    return dateDelta;
+  }
+
+  return right.id.localeCompare(left.id);
+};
+
+const isActiveSortStatus = (status: string) => {
+  const normalized = normalizeStatus(status);
+  return (
+    normalized === "starting" ||
+    normalized === "running" ||
+    normalized === "interrupting" ||
+    normalized === "resuming"
+  );
+};
+
+const sortSessions = (items: Session[], mode: DashboardSortMode) => {
+  if (mode === "oldest") {
+    return [...items].sort((left, right) => -byCreatedAtDesc(left, right));
+  }
+
+  if (mode === "recent") {
+    return [...items].sort(byCreatedAtDesc);
+  }
+
+  return [...items].sort((left, right) => {
+    const leftActive = isActiveSortStatus(left.status);
+    const rightActive = isActiveSortStatus(right.status);
+    if (leftActive !== rightActive) {
+      return leftActive ? -1 : 1;
+    }
+
+    return byCreatedAtDesc(left, right);
+  });
+};
+
 const extractFailureReason = (events: SessionEvent[]) => {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
@@ -218,31 +330,34 @@ const extractFailureReason = (events: SessionEvent[]) => {
 };
 
 export const dashboardRows = derived(
-  [sessions, sessionEvents, dashboardNow],
-  ([$sessions, $sessionEvents, $dashboardNow]): DashboardSessionRow[] =>
-    [...$sessions]
-      .sort((left, right) => {
-        const dateDelta = toEpoch(right.created_at) - toEpoch(left.created_at);
-        if (dateDelta !== 0) {
-          return dateDelta;
-        }
+  [sessions, sessionEvents, dashboardNow, dashboardSortMode],
+  ([
+    $sessions,
+    $sessionEvents,
+    $dashboardNow,
+    $dashboardSortMode,
+  ]): DashboardSessionRow[] =>
+    sortSessions($sessions, $dashboardSortMode).map((session) => {
+      const status = toDashboardStatus(session.status);
+      const events = $sessionEvents[session.id] ?? [];
 
-        return right.id.localeCompare(left.id);
-      })
-      .map((session) => {
-        const status = toDashboardStatus(session.status);
-        const events = $sessionEvents[session.id] ?? [];
-
-        return {
-          id: session.id,
-          name: session.name,
-          status,
-          recentActivity: compactAgeLabel(session.updated_at, $dashboardNow),
-          failureReason:
-            status === "Failed" ? extractFailureReason(events) : undefined,
-          createdAt: session.created_at,
-        } satisfies DashboardSessionRow;
-      }),
+      return {
+        id: session.id,
+        name: session.name,
+        status,
+        recentActivity: compactAgeLabel(session.updated_at, $dashboardNow),
+        failureReason:
+          status === "Failed"
+            ? (extractFailureReason(events) ??
+              (session.failure_reason
+                ? toSingleLine(session.failure_reason)
+                : undefined))
+            : undefined,
+        createdAt: session.created_at,
+        restored: session.restored ?? false,
+        recoveryHint: (session.recovery_hint ?? false) && status === "Running",
+      } satisfies DashboardSessionRow;
+    }),
 );
 
 export function refreshDashboardNowForTests(now: number) {
@@ -338,6 +453,25 @@ const updateSessionStatus = (
   sessions.update((items) =>
     items.map((item) =>
       item.id === sessionId ? { ...item, status, updated_at: updatedAt } : item,
+    ),
+  );
+};
+
+const clearSessionRestoreIndicators = (
+  sessionId: string,
+  updatedAt: string,
+) => {
+  sessions.update((items) =>
+    items.map((item) =>
+      item.id === sessionId
+        ? {
+            ...item,
+            restored: false,
+            restored_at: null,
+            recovery_hint: false,
+            updated_at: updatedAt,
+          }
+        : item,
     ),
   );
 };
@@ -478,6 +612,11 @@ export function routeSessionEvent(event: SessionEvent) {
   const { session_id: sessionId, seq, timestamp } = event.data;
   canonicalSessionEventIds.add(sessionId);
 
+  const activeSession = get(sessions).find((item) => item.id === sessionId);
+  if (activeSession?.restored) {
+    clearSessionRestoreIndicators(sessionId, timestamp);
+  }
+
   if (event.type === "message") {
     appendMessage(
       sessionId,
@@ -530,6 +669,8 @@ export function resetSessionEventStateForTests() {
   listenerInitializing = false;
   initialSessionsHydrated.set(false);
   initialSessionsLoadError.set(null);
+  dashboardSortMode.set(STARTUP_SORT_MODE);
+  dashboardSortPreference.set(loadDashboardSortPreference());
   dashboardNow.set(Date.now());
 }
 
@@ -574,15 +715,55 @@ function routeSessionDebugEvent(event: SessionDebugEvent) {
 }
 
 export async function loadSessions() {
-  const data = await invokeWithTimeout<Session[]>(
-    "list_sessions",
-    undefined,
-    LIST_SESSIONS_TIMEOUT_MS,
-  );
-  sessions.set(data);
-  activeSessionId.update((current) => current ?? data[0]?.id ?? null);
+  const [data, dashboard] = await Promise.all([
+    invokeWithTimeout<Session[]>(
+      "list_sessions",
+      undefined,
+      LIST_SESSIONS_TIMEOUT_MS,
+    ),
+    invokeWithTimeout<DashboardSessionProjection[]>(
+      "list_dashboard_sessions",
+      undefined,
+      LIST_SESSIONS_TIMEOUT_MS,
+    ),
+  ]);
+
+  const dashboardById = new Map(dashboard.map((row) => [row.id, row]));
+  const current = get(sessions);
+  const currentById = new Map(current.map((session) => [session.id, session]));
+  const rows: Session[] = data.map((session) => {
+    const projection = dashboardById.get(session.id);
+    return {
+      ...session,
+      last_activity_at:
+        projection?.last_activity_at ?? session.last_activity_at ?? null,
+      failure_reason:
+        projection?.failure_reason ?? session.failure_reason ?? null,
+      restored: projection?.restored ?? false,
+      restored_at: projection?.restored_at ?? null,
+      recovery_hint: projection?.recovery_hint ?? false,
+    };
+  });
+
+  for (const session of data) {
+    pendingSpawnSessionIds.delete(session.id);
+  }
+
+  for (const sessionId of pendingSpawnSessionIds) {
+    if (rows.some((session) => session.id === sessionId)) {
+      continue;
+    }
+
+    const optimistic = currentById.get(sessionId);
+    if (optimistic) {
+      rows.unshift(optimistic);
+    }
+  }
+
+  sessions.set(rows);
+  activeSessionId.update((current) => current ?? rows[0]?.id ?? null);
   dashboardSelectedSessionId.update(
-    (current) => current ?? data[0]?.id ?? null,
+    (current) => current ?? rows[0]?.id ?? null,
   );
 
   for (const session of data) {
@@ -611,8 +792,8 @@ export async function loadSessionHistory(sessionId: string) {
     return;
   }
 
-  const messages = await invoke<StoredSessionMessage[]>(
-    "list_session_messages",
+  const history = await invoke<StoredSessionHistoryEvent[]>(
+    "list_session_history",
     {
       id: sessionId,
     },
@@ -620,7 +801,7 @@ export async function loadSessionHistory(sessionId: string) {
 
   loadedSessionHistory.add(sessionId);
 
-  if (messages.length === 0) {
+  if (history.length === 0) {
     return;
   }
 
@@ -630,16 +811,97 @@ export async function loadSessionHistory(sessionId: string) {
       return items;
     }
 
-    const historyEvents: SessionEvent[] = messages.map((message, index) => ({
-      type: "message",
-      data: {
-        session_id: sessionId,
-        seq: index + 1,
-        timestamp: message.timestamp,
-        content: message.content,
-        complete: true,
-      },
-    }));
+    const historyEvents: SessionEvent[] = history
+      .map((event): SessionEvent | null => {
+        const payloadType = event.payload_json?.type;
+        const payloadData = event.payload_json?.data;
+        if (typeof payloadType !== "string" || !payloadData) {
+          return null;
+        }
+
+        const base = {
+          session_id: sessionId,
+          seq: event.seq,
+          timestamp: event.timestamp,
+        };
+
+        if (payloadType === "message") {
+          return {
+            type: "message",
+            data: {
+              ...base,
+              content: String(payloadData.content ?? ""),
+              complete: true,
+            },
+          };
+        }
+
+        if (payloadType === "thinking") {
+          return {
+            type: "thinking",
+            data: {
+              ...base,
+              content: String(payloadData.content ?? ""),
+            },
+          };
+        }
+
+        if (payloadType === "tool_call") {
+          return {
+            type: "tool_call",
+            data: {
+              ...base,
+              call_id:
+                typeof payloadData.call_id === "string"
+                  ? payloadData.call_id
+                  : undefined,
+              tool_name: String(payloadData.tool_name ?? "unknown"),
+              args: payloadData.args,
+            },
+          };
+        }
+
+        if (payloadType === "tool_result") {
+          return {
+            type: "tool_result",
+            data: {
+              ...base,
+              call_id:
+                typeof payloadData.call_id === "string"
+                  ? payloadData.call_id
+                  : undefined,
+              tool_name:
+                typeof payloadData.tool_name === "string"
+                  ? payloadData.tool_name
+                  : undefined,
+              result: payloadData.result,
+            },
+          };
+        }
+
+        if (payloadType === "status") {
+          return {
+            type: "status",
+            data: {
+              ...base,
+              status: normalizeStatus(String(payloadData.status ?? "starting")),
+            },
+          };
+        }
+
+        if (payloadType === "error") {
+          return {
+            type: "error",
+            data: {
+              ...base,
+              error: String(payloadData.message ?? payloadData.error ?? ""),
+            },
+          };
+        }
+
+        return null;
+      })
+      .filter((event): event is SessionEvent => event !== null);
 
     return {
       ...items,
@@ -723,6 +985,9 @@ export async function spawnSession(
 ) {
   await initSessionListeners();
 
+  const startedAtMs = Date.now();
+  const startedAt = new Date(startedAtMs).toISOString();
+
   let id: string;
   try {
     id = await invokeWithTimeout<string>(
@@ -736,20 +1001,86 @@ export async function spawnSession(
       SPAWN_SESSION_TIMEOUT_MS,
     );
   } catch (error) {
-    throw new Error(normalizeSpawnSessionError(error));
+    const normalized = normalizeSpawnSessionError(error);
+    const finishedAtMs = Date.now();
+    spawnRuntimeDiagnostics.set({
+      started_at: startedAt,
+      finished_at: new Date(finishedAtMs).toISOString(),
+      outcome: "spawn_failed",
+      session_id: null,
+      spawn_duration_ms: Math.max(0, finishedAtMs - startedAtMs),
+      refresh_duration_ms: null,
+      total_duration_ms: Math.max(0, finishedAtMs - startedAtMs),
+      refresh_status: "skipped",
+      sessions_count: get(sessions).length,
+      has_session_in_store: false,
+      active_session_id: get(activeSessionId),
+      dashboard_selected_session_id: get(dashboardSelectedSessionId),
+      error_message: normalized,
+    });
+    throw new Error(normalized);
   }
+
+  pendingSpawnSessionIds.add(id);
+  const now = createTimestamp();
+  sessions.update((items) => {
+    if (items.some((item) => item.id === id)) {
+      return items;
+    }
+
+    return [
+      {
+        id,
+        name,
+        status: "starting",
+        working_dir: workingDir,
+        created_at: now,
+        updated_at: now,
+      },
+      ...items,
+    ];
+  });
+  activeSessionId.set(id);
+  dashboardSelectedSessionId.set(id);
+
+  const refreshStartedAtMs = Date.now();
+  let refreshStatus: "succeeded" | "failed" = "succeeded";
+  let refreshErrorMessage: string | null = null;
 
   try {
     await loadSessions();
   } catch (error) {
+    refreshStatus = "failed";
+    refreshErrorMessage = toErrorMessage(
+      error,
+      "Unknown list_sessions failure",
+    );
     console.warn("[sessions] spawn succeeded but refresh failed", {
       sessionId: id,
-      error: toErrorMessage(error, "Unknown list_sessions failure"),
+      error: refreshErrorMessage,
     });
   }
 
-  activeSessionId.set(id);
-  dashboardSelectedSessionId.set(id);
+  const finishedAtMs = Date.now();
+  const currentSessions = get(sessions);
+  const currentActiveSessionId = get(activeSessionId);
+  const currentDashboardSelectedSessionId = get(dashboardSelectedSessionId);
+  spawnRuntimeDiagnostics.set({
+    started_at: startedAt,
+    finished_at: new Date(finishedAtMs).toISOString(),
+    outcome: "success",
+    session_id: id,
+    spawn_duration_ms: Math.max(0, refreshStartedAtMs - startedAtMs),
+    refresh_duration_ms: Math.max(0, finishedAtMs - refreshStartedAtMs),
+    total_duration_ms: Math.max(0, finishedAtMs - startedAtMs),
+    refresh_status: refreshStatus,
+    sessions_count: currentSessions.length,
+    has_session_in_store: currentSessions.some((session) => session.id === id),
+    active_session_id: currentActiveSessionId,
+    dashboard_selected_session_id: currentDashboardSelectedSessionId,
+    error_message: refreshErrorMessage,
+  });
+
   return id;
 }
 
@@ -814,7 +1145,9 @@ export async function resumeSession(sessionId: string, prompt: string) {
 
   const nextPrompt = prompt.trim();
   if (!nextPrompt) {
-    throw new Error("Resume prompt cannot be empty.");
+    const message = "Resume prompt cannot be empty.";
+    setSessionError(sessionId, message);
+    throw new Error(message);
   }
 
   setSessionError(sessionId, null);
