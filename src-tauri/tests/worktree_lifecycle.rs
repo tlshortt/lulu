@@ -72,13 +72,16 @@ fn projection_normalizes_dashboard_rows_to_locked_statuses() {
         last_activity_at: None,
         failure_reason: Some("should disappear".to_string()),
         worktree_path: None,
-        restored: false,
-        restored_at: None,
-        recovery_hint: false,
+        restored: true,
+        restored_at: Some(chrono::Utc::now().to_rfc3339()),
+        recovery_hint: true,
     };
     let completed_projection = project_dashboard_row(completed);
     assert_eq!(completed_projection.status, DASHBOARD_STATUS_COMPLETED);
     assert!(completed_projection.failure_reason.is_none());
+    assert!(completed_projection.restored);
+    assert!(completed_projection.restored_at.is_some());
+    assert!(completed_projection.recovery_hint);
 }
 
 #[test]
@@ -109,7 +112,7 @@ fn spawn_uses_session_specific_worktree_path() {
 }
 
 #[test]
-fn startup_reconcile_marks_stale_running_as_failed() {
+fn startup_reconcile_marks_stale_running_as_restored_without_forcing_failed() {
     let repo = init_repo();
     let db_path = repo.path().join("lulu.db");
     let db = init_database(&db_path).expect("database should initialize");
@@ -138,7 +141,7 @@ fn startup_reconcile_marks_stale_running_as_failed() {
         .get_session("stale-session")
         .expect("session read should succeed")
         .expect("session should exist");
-    assert_eq!(stored.status, "failed");
+    assert_eq!(stored.status, "running");
 
     let dashboard = db
         .list_dashboard_sessions()
@@ -147,13 +150,14 @@ fn startup_reconcile_marks_stale_running_as_failed() {
         .iter()
         .find(|row| row.id == "stale-session")
         .expect("stale row should exist");
+    assert!(stale_row.restored, "stale row should be marked restored");
     assert!(
-        stale_row
-            .failure_reason
-            .as_deref()
-            .unwrap_or_default()
-            .contains("marked failed on restart"),
-        "stale session should have inline-safe reconcile failure reason"
+        stale_row.restored_at.is_some(),
+        "stale row should record a restore timestamp"
+    );
+    assert!(
+        stale_row.recovery_hint,
+        "stale row should include recovery hint metadata"
     );
 
     service

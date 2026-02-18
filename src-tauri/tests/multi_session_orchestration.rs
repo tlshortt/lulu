@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
+use serde_json::json;
 use tempfile::tempdir;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, timeout, Duration};
@@ -588,6 +589,94 @@ async fn resume_reuses_same_row_updates_metadata_and_keeps_terminal_idempotent()
         counts.get("resume-session").copied().unwrap_or(0),
         1,
         "terminal transition should apply once during resume"
+    );
+}
+
+#[test]
+fn session_history_keeps_deterministic_order_across_resume_runs() {
+    let temp = tempdir().expect("tempdir should be created");
+    let db_path = temp.path().join("lulu.db");
+    let db = init_database(&db_path).expect("database should initialize");
+
+    let created_at = chrono::Utc::now().to_rfc3339();
+    db.create_session(&Session {
+        id: "history-session".to_string(),
+        name: "history-session".to_string(),
+        status: "completed".to_string(),
+        working_dir: temp.path().display().to_string(),
+        created_at: created_at.clone(),
+        updated_at: created_at,
+    })
+    .expect("session should persist");
+
+    let run_a = "run-a";
+    let run_b = "run-b";
+
+    db.insert_session_event(
+        "history-session",
+        run_a,
+        1,
+        "status",
+        &json!({ "status": "running" }),
+        "2026-02-18T00:00:01Z",
+    )
+    .expect("first run status should persist");
+    db.insert_session_event(
+        "history-session",
+        run_a,
+        2,
+        "message",
+        &json!({ "content": "first run output" }),
+        "2026-02-18T00:00:02Z",
+    )
+    .expect("first run message should persist");
+    db.insert_session_event(
+        "history-session",
+        run_b,
+        1,
+        "status",
+        &json!({ "status": "running" }),
+        "2026-02-18T00:00:03Z",
+    )
+    .expect("resume run status should persist");
+    db.insert_session_event(
+        "history-session",
+        run_b,
+        2,
+        "tool_call",
+        &json!({ "tool_name": "apply_patch" }),
+        "2026-02-18T00:00:04Z",
+    )
+    .expect("resume run tool call should persist");
+
+    db.insert_session_event(
+        "history-session",
+        run_b,
+        2,
+        "tool_call",
+        &json!({ "tool_name": "apply_patch" }),
+        "2026-02-18T00:00:04Z",
+    )
+    .expect("duplicate row should be ignored by unique key");
+
+    let history = db
+        .list_session_history("history-session")
+        .expect("history query should succeed");
+
+    assert_eq!(history.len(), 4, "history should include all unique rows across runs");
+    let run_seq: Vec<(String, i64)> = history
+        .iter()
+        .map(|event| (event.run_id.clone(), event.seq))
+        .collect();
+    assert_eq!(
+        run_seq,
+        vec![
+            (run_a.to_string(), 1),
+            (run_a.to_string(), 2),
+            (run_b.to_string(), 1),
+            (run_b.to_string(), 2),
+        ],
+        "history ordering should remain deterministic across resume attempts"
     );
 }
 
