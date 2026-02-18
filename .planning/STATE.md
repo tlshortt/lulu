@@ -50,6 +50,7 @@ Last activity: 2026-02-16 — Rolled codebase back to post-Phase-3 commit and re
 | Phase 05 P03 | 3 min | 3 tasks | 7 files |
 | Phase 06 P01 | 5 min | 3 tasks | 7 files |
 | Phase 06 P02 | 7 min | 3 tasks | 6 files |
+| Phase 06 P03 | 1 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -100,6 +101,8 @@ Recent decisions affecting current work:
 - [Phase 06]: Use list_dashboard_sessions metadata merged with list_sessions lifecycle status for restore-aware rows.
 - [Phase 06]: Apply startup active-first dashboard ordering while persisting user sort preference for later interaction.
 - [Phase 06]: Hydrate frontend session timelines from list_session_history payload variants instead of message-only history.
+- [Phase 06]: Use completeInitialSessionsHydration as the startup-lock completion boundary for restoring remembered dashboard sort mode.
+- [Phase 06]: Keep sort restoration in store transitions rather than UI effects to preserve deterministic behavior across consumers.
 
 ### Pending Todos
 
@@ -114,8 +117,8 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-**Last session:** 2026-02-18T03:34:43.302Z
-**Stopped At:** Completed 06-02-PLAN.md
+**Last session:** 2026-02-18T14:54:37.401Z
+**Stopped At:** Completed 06-03-PLAN.md
 **Resume File:** None
 
 ---
