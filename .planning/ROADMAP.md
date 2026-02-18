@@ -52,7 +52,7 @@ Plans:
   2. User sees live streaming output (text, thinking, tool use, tool results) in real-time
   3. Session runs to completion without crashing the app
   4. Session displays final status (completed or failed) after finishing
-**Plans**: 2 plans
+**Plans**: 3 plans
 
 Plans:
 - [x] 02-01-PLAN.md — Backend stream-json normalization + idempotent terminal lifecycle persistence
@@ -98,11 +98,12 @@ Plans:
   3. User can continue/resume a completed or interrupted session with a new prompt
   4. App handles session errors gracefully with clear error messages
   5. Sessions recover from errors without crashing the application
-**Plans**: 2 plans
+**Plans**: 3 plans
 
 Plans:
 - [ ] 05-01-PLAN.md — Backend-authoritative interrupt/resume lifecycle with 10s retry/deadline and same-row resume continuity
 - [ ] 05-02-PLAN.md — Session-scoped lifecycle UI controls (row + detail) with locked interrupt UX and isolation regression coverage
+- [ ] 05-03-PLAN.md — Gap closure: New Session launch-path hardening with explicit failure feedback and retry-safe behavior
 
 ### Phase 6: Persistence & History
 **Goal**: Sessions persist across app restarts and users can review complete session history
@@ -113,11 +114,11 @@ Plans:
   2. Session history includes all prompts, outputs, tool calls, and approvals
   3. User can review session logs after completion to see what the agent did
   4. Session state (running, waiting, completed, failed, interrupted) persists correctly across restarts
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — TBD
-- [ ] 06-02-PLAN.md — TBD
+- [ ] 06-01-PLAN.md — Backend durable session event timeline + restore-aware startup reconciliation + history API
+- [ ] 06-02-PLAN.md — Frontend restore-aware dashboard sort/badges + full timeline history replay
 
 ## Progress
 
@@ -130,7 +131,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Single Session Core | 2/2 | Complete | 2026-02-15 |
 | 3. Multi-Session Orchestration | 5/5 | Complete | 2026-02-16 |
 | 4. Security & Approval System | 0/0 | Scrapped | 2026-02-16 |
-| 5. Session Lifecycle Control | 0/2 | Not started | - |
+| 5. Session Lifecycle Control | 0/3 | Not started | - |
 | 6. Persistence & History | 0/2 | Not started | - |
 
 ---
