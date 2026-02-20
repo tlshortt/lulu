@@ -30,6 +30,7 @@ export const selectedSessionId = activeSessionId;
 export const dashboardSelectedSessionId = writable<string | null>(null);
 export const initialSessionsHydrated = writable(false);
 export const initialSessionsLoadError = writable<string | null>(null);
+export const initialSessionsRetryError = writable<string | null>(null);
 export const sessionEvents = writable<Record<string, SessionEvent[]>>({});
 export interface SessionDebugState {
   cliPath?: string;
@@ -444,12 +445,14 @@ const normalizeSpawnSessionError = (value: unknown) => {
 export const beginInitialSessionsHydration = () => {
   initialSessionsHydrated.set(false);
   initialSessionsLoadError.set(null);
+  initialSessionsRetryError.set(null);
 };
 
 export const completeInitialSessionsHydration = (
   error: string | null = null,
 ) => {
   initialSessionsLoadError.set(error);
+  initialSessionsRetryError.set(null);
   initialSessionsHydrated.set(true);
   dashboardSortMode.set(get(dashboardSortPreference));
 };
@@ -678,6 +681,7 @@ export function resetSessionEventStateForTests() {
   listenerInitializing = false;
   initialSessionsHydrated.set(false);
   initialSessionsLoadError.set(null);
+  initialSessionsRetryError.set(null);
   dashboardSortMode.set(STARTUP_SORT_MODE);
   dashboardSortPreference.set(loadDashboardSortPreference());
   dashboardNow.set(Date.now());
@@ -965,14 +969,17 @@ export async function loadSessionsWithRetry(attempts = 5, delayMs = 150) {
         `[sessions] loadSessionsWithRetry attempt ${attempt}/${attempts}`,
       );
       await loadSessions();
+      initialSessionsRetryError.set(null);
       console.debug("[sessions] list_sessions succeeded");
       return;
     } catch (error) {
       lastError = error;
+      const message = toErrorMessage(error, "Unknown list_sessions failure");
+      initialSessionsRetryError.set(message);
       console.warn("[sessions] list_sessions failed", {
         attempt,
         attempts,
-        error: toErrorMessage(error, "Unknown list_sessions failure"),
+        error: message,
       });
       if (attempt < attempts) {
         await delay(delayMs);

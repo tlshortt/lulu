@@ -1,13 +1,18 @@
 <script lang="ts">
   import SessionOutput from "$lib/components/SessionOutput.svelte";
+  import { get } from "svelte/store";
   import {
     activeSessionId,
+    bootstrapInitialSessions,
     dashboardSelectedSessionId,
     initialSessionsLoadError,
     initialSessionsHydrated,
+    initialSessionsRetryError,
     spawnRuntimeDiagnostics,
     sessions,
   } from "$lib/stores/sessions";
+
+  const HYDRATION_STALL_MS = 4000;
 
   const showHydrationGate = $derived(
     !$initialSessionsHydrated && $sessions.length === 0 && !$activeSessionId,
@@ -51,6 +56,73 @@
   };
 
   let spawnDebugMinimized = $state(loadSpawnDebugMinimized());
+  let hydrationStalled = $state(false);
+  let hydrationErrorCopied = $state(false);
+  let hydrationErrorCopyFailed = $state(false);
+
+  const HYDRATION_COPY_FEEDBACK_MS = 2000;
+
+  const resolveHydrationError = () =>
+    get(initialSessionsRetryError) ?? get(initialSessionsLoadError);
+
+  const copyHydrationError = async () => {
+    hydrationErrorCopied = false;
+    hydrationErrorCopyFailed = false;
+
+    const errorMessage = resolveHydrationError();
+    if (!errorMessage) {
+      return;
+    }
+
+    if (
+      typeof window === "undefined" ||
+      !window.navigator?.clipboard?.writeText
+    ) {
+      hydrationErrorCopyFailed = true;
+      return;
+    }
+
+    try {
+      await window.navigator.clipboard.writeText(errorMessage);
+      hydrationErrorCopied = true;
+      window.setTimeout(() => {
+        hydrationErrorCopied = false;
+      }, HYDRATION_COPY_FEEDBACK_MS);
+    } catch (error) {
+      hydrationErrorCopyFailed = true;
+      console.error("Failed to copy hydration error", error);
+    }
+  };
+
+  const retryInitialSessionLoad = async () => {
+    hydrationStalled = false;
+
+    try {
+      await bootstrapInitialSessions();
+    } catch (error) {
+      console.error("Failed to refresh initial sessions", error);
+    }
+  };
+
+  $effect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (!showHydrationGate) {
+      hydrationStalled = false;
+      return;
+    }
+
+    hydrationStalled = false;
+    const timer = window.setTimeout(() => {
+      hydrationStalled = true;
+    }, HYDRATION_STALL_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  });
 
   $effect(() => {
     if (typeof window === "undefined") {
@@ -80,6 +152,62 @@
       <p class="max-w-md text-sm text-foreground/60">
         Preparing your dashboard and syncing the latest session state.
       </p>
+      {#if hydrationStalled}
+        <div
+          class="max-w-lg rounded-md border border-border bg-sidebar/50 px-4 py-3 text-left"
+        >
+          <div
+            class="text-xs font-semibold uppercase tracking-[0.12em] text-foreground/55"
+          >
+            Still waiting on session sync
+          </div>
+          <p class="mt-1 text-sm text-foreground/70">
+            This usually means the backend session list is still booting. You
+            can retry now or start a new session from the sidebar.
+          </p>
+          {#if $initialSessionsRetryError}
+            <div
+              class="mt-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive"
+            >
+              Last backend error: {$initialSessionsRetryError}
+            </div>
+          {/if}
+          {#if $initialSessionsLoadError}
+            <div
+              class="mt-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive"
+            >
+              Initial load failed: {$initialSessionsLoadError}
+            </div>
+          {/if}
+          {#if $initialSessionsRetryError || $initialSessionsLoadError}
+            <div class="mt-2 flex items-center gap-2">
+              <button
+                class="rounded border border-border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-foreground transition hover:bg-background/60"
+                type="button"
+                onclick={() => {
+                  void copyHydrationError();
+                }}
+              >
+                Copy error
+              </button>
+              {#if hydrationErrorCopied}
+                <span class="text-xs text-emerald-300">Copied</span>
+              {:else if hydrationErrorCopyFailed}
+                <span class="text-xs text-destructive">Copy failed</span>
+              {/if}
+            </div>
+          {/if}
+          <button
+            class="mt-3 rounded border border-border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-foreground transition hover:bg-background/60"
+            type="button"
+            onclick={() => {
+              void retryInitialSessionLoad();
+            }}
+          >
+            Retry sync
+          </button>
+        </div>
+      {/if}
     </div>
   {:else if showStartupView}
     <div
