@@ -3,7 +3,9 @@ use std::path::Path;
 use std::sync::Mutex;
 
 pub mod session;
-pub use session::{Session, SessionDashboardRow, SessionMessage};
+pub use session::{
+    Session, SessionDashboardRow, SessionHistoryEvent, SessionMessage, SessionRunMetadata,
+};
 
 pub struct Database {
     pub conn: Mutex<Connection>,
@@ -29,7 +31,13 @@ pub fn init_database(db_path: &Path) -> Result<Database> {
             updated_at TEXT NOT NULL,
             last_activity_at TEXT,
             failure_reason TEXT,
-            worktree_path TEXT
+            worktree_path TEXT,
+            resume_count INTEGER NOT NULL DEFAULT 0,
+            active_run_id TEXT,
+            last_resume_at TEXT,
+            restored INTEGER NOT NULL DEFAULT 0,
+            restored_at TEXT,
+            recovery_hint INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS messages (
@@ -44,9 +52,35 @@ pub fn init_database(db_path: &Path) -> Result<Database> {
         CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);",
     )?;
 
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS session_events (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            run_id TEXT NOT NULL,
+            seq INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+            UNIQUE(session_id, run_id, seq)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_session_events_session_id_timestamp
+            ON session_events(session_id, timestamp, seq, id);
+
+        CREATE INDEX IF NOT EXISTS idx_session_events_session_id_run_id_seq
+            ON session_events(session_id, run_id, seq);",
+    )?;
+
     ensure_session_column(&conn, "last_activity_at", "TEXT")?;
     ensure_session_column(&conn, "failure_reason", "TEXT")?;
     ensure_session_column(&conn, "worktree_path", "TEXT")?;
+    ensure_session_column(&conn, "resume_count", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_session_column(&conn, "active_run_id", "TEXT")?;
+    ensure_session_column(&conn, "last_resume_at", "TEXT")?;
+    ensure_session_column(&conn, "restored", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_session_column(&conn, "restored_at", "TEXT")?;
+    ensure_session_column(&conn, "recovery_hint", "INTEGER NOT NULL DEFAULT 0")?;
 
     Ok(Database { conn: Mutex::new(conn) })
 }

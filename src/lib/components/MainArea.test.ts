@@ -1,11 +1,12 @@
-import { render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   activeSessionId,
   dashboardSelectedSessionId,
   initialSessionsLoadError,
   initialSessionsHydrated,
+  initialSessionsRetryError,
   sessions,
 } from "$lib/stores/sessions";
 import MainArea from "./MainArea.svelte";
@@ -16,6 +17,7 @@ describe("MainArea", () => {
     activeSessionId.set(null);
     dashboardSelectedSessionId.set(null);
     initialSessionsLoadError.set(null);
+    initialSessionsRetryError.set(null);
     initialSessionsHydrated.set(true);
   });
 
@@ -25,6 +27,15 @@ describe("MainArea", () => {
     expect(screen.getByText("No active sessions")).toBeTruthy();
     expect(screen.getByText(/Start a Claude Code session/)).toBeTruthy();
     expect(screen.getByText("⌘ + N")).toBeTruthy();
+  });
+
+  it("does not show empty state when a session is active but list is stale", () => {
+    activeSessionId.set("pending-1");
+
+    render(MainArea);
+
+    expect(screen.queryByText("No active sessions")).toBeNull();
+    expect(screen.getByText("Status: unknown")).toBeTruthy();
   });
 
   it("renders SessionOutput when sessions exist", () => {
@@ -66,7 +77,7 @@ describe("MainArea", () => {
     ).toBeTruthy();
   });
 
-  it("suppresses transient session content before initial hydration", () => {
+  it("shows session output when active session exists before hydration completes", () => {
     initialSessionsHydrated.set(false);
     sessions.set([
       {
@@ -82,11 +93,12 @@ describe("MainArea", () => {
 
     render(MainArea);
 
-    expect(screen.getByText("Loading sessions...")).toBeTruthy();
+    expect(screen.queryByText("Loading sessions...")).toBeNull();
     expect(screen.queryByText("No active sessions")).toBeNull();
     expect(
       screen.queryByText("Double-click to open selected session output"),
     ).toBeNull();
+    expect(screen.getByText("Status: running")).toBeTruthy();
   });
 
   it("shows load error when initial fetch fails", () => {
@@ -110,5 +122,33 @@ describe("MainArea", () => {
 
     expect(screen.queryByText("Loading sessions...")).toBeNull();
     expect(screen.getByText("No active sessions")).toBeTruthy();
+  });
+
+  it("shows copy error button on stalled hydration and copies retry error", async () => {
+    vi.useFakeTimers();
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    initialSessionsHydrated.set(false);
+    initialSessionsRetryError.set("Backend unavailable");
+
+    render(MainArea);
+
+    vi.advanceTimersByTime(4000);
+    await tick();
+
+    const button = screen.getByRole("button", { name: "Copy error" });
+    expect(button).toBeTruthy();
+
+    await fireEvent.click(button);
+
+    expect(writeText).toHaveBeenCalledWith("Backend unavailable");
+    expect(screen.getByText("Copied")).toBeTruthy();
+
+    vi.useRealTimers();
   });
 });

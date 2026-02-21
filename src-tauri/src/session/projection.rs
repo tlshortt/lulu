@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 pub const DASHBOARD_STATUS_STARTING: &str = "Starting";
 pub const DASHBOARD_STATUS_RUNNING: &str = "Running";
 pub const DASHBOARD_STATUS_COMPLETED: &str = "Completed";
+pub const DASHBOARD_STATUS_INTERRUPTED: &str = "Interrupted";
 pub const DASHBOARD_STATUS_FAILED: &str = "Failed";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -14,17 +15,21 @@ pub struct DashboardSessionProjection {
     pub created_at: String,
     pub last_activity_at: Option<String>,
     pub failure_reason: Option<String>,
+    pub restored: bool,
+    pub restored_at: Option<String>,
+    pub recovery_hint: bool,
 }
 
 pub fn normalize_dashboard_status(status: &str) -> &'static str {
     match status {
         "starting" | "queued" | "created" => DASHBOARD_STATUS_STARTING,
         "running" => DASHBOARD_STATUS_RUNNING,
+        "interrupting" => DASHBOARD_STATUS_RUNNING,
+        "interrupted" => DASHBOARD_STATUS_INTERRUPTED,
         "completed" | "complete" | "done" | "success" => DASHBOARD_STATUS_COMPLETED,
         "failed"
         | "error"
         | "killed"
-        | "interrupted"
         | "cancelled"
         | "canceled"
         | "crashed"
@@ -70,6 +75,9 @@ pub fn project_dashboard_row(row: SessionDashboardRow) -> DashboardSessionProjec
         created_at: row.created_at,
         last_activity_at: row.last_activity_at,
         failure_reason: projected_reason,
+        restored: row.restored,
+        restored_at: row.restored_at,
+        recovery_hint: row.recovery_hint,
     }
 }
 
@@ -81,5 +89,10 @@ mod tests {
     fn normalize_failure_reason_coalesces_whitespace() {
         let reason = normalize_failure_reason(Some("line one\nline two\tline three"));
         assert_eq!(reason.as_deref(), Some("line one line two line three"));
+    }
+
+    #[test]
+    fn interrupted_status_projects_to_interrupted_chip() {
+        assert_eq!(normalize_dashboard_status("interrupted"), DASHBOARD_STATUS_INTERRUPTED);
     }
 }

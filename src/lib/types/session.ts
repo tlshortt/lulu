@@ -34,7 +34,15 @@ export interface ThinkingEventData extends SessionEventBase {
 }
 
 export interface StatusEventData extends SessionEventBase {
-  status: "running" | "completed" | "failed" | "killed" | string;
+  status:
+    | "running"
+    | "completed"
+    | "failed"
+    | "killed"
+    | "interrupting"
+    | "interrupted"
+    | "resuming"
+    | string;
   message?: string;
 }
 
@@ -60,7 +68,19 @@ export interface SessionDebugEvent {
   message?: string;
 }
 
-export type DashboardStatus = "Starting" | "Running" | "Completed" | "Failed";
+export type DashboardStatus =
+  | "Starting"
+  | "Running"
+  | "Completed"
+  | "Interrupted"
+  | "Failed";
+
+export type DashboardSortMode =
+  | "active-first-then-recent"
+  | "recent"
+  | "oldest";
+
+export type SessionOperationStatus = "interrupting" | "resuming";
 
 export interface DashboardSessionRow {
   id: string;
@@ -69,4 +89,6 @@ export interface DashboardSessionRow {
   recentActivity: string;
   failureReason?: string;
   createdAt: string;
+  restored: boolean;
+  recoveryHint: boolean;
 }
