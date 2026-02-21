@@ -85,11 +85,17 @@ fn cleanup_failed_spawn_attempt(
     worktree_service: Option<&WorktreeService>,
     session_id: &str,
 ) {
-    let _ = db.delete_session(session_id);
+    if let Err(e) = db.delete_session(session_id) {
+        eprintln!("[cleanup_failed_spawn_attempt] Failed to delete session {session_id}: {e}");
+    }
 
     if let Some(service) = worktree_service {
-        let _ = service.remove_worktree_for_session(session_id);
-        let _ = service.prune_worktrees();
+        if let Err(e) = service.remove_worktree_for_session(session_id) {
+            eprintln!("[cleanup_failed_spawn_attempt] Failed to remove worktree for session {session_id}: {e}");
+        }
+        if let Err(e) = service.prune_worktrees() {
+            eprintln!("[cleanup_failed_spawn_attempt] Failed to prune worktrees: {e}");
+        }
     }
 }
 
@@ -701,8 +707,12 @@ pub async fn resume_session(
     };
 
     if let Err(err) = db.begin_run_attempt(&id, &run_id) {
-        let _ = spawned.child.kill().await;
-        let _ = db.update_session_status(&id, &session.status);
+        if let Err(kill_err) = spawned.child.kill().await {
+            eprintln!("[resume_session] Failed to kill child process after begin_run_attempt failure for session {id}: {kill_err}");
+        }
+        if let Err(status_err) = db.update_session_status(&id, &session.status) {
+            eprintln!("[resume_session] Failed to restore session status after begin_run_attempt failure for session {id}: {status_err}");
+        }
         return Err(format!("Failed to persist resume run metadata: {}", err));
     }
 

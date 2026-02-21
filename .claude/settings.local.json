@@ -32,7 +32,12 @@
       "WebFetch(domain:angular.dev)",
       "WebFetch(domain:www.altexsoft.com)",
       "WebFetch(domain:www.okupter.com)",
-      "WebFetch(domain:formations-developpeur-frontend.itgalaxy.io)"
+      "WebFetch(domain:formations-developpeur-frontend.itgalaxy.io)",
+      "WebFetch(domain:pausanchez.com)",
+      "WebFetch(domain:blog.madrigan.com)",
+      "WebFetch(domain:svelte.dev)",
+      "WebFetch(domain:mainmatter.com)",
+      "WebFetch(domain:blog.fullmeasure.uk)"
     ]
   }
 }
