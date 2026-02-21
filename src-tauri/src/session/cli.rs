@@ -86,8 +86,8 @@ impl ClaudeCli {
             .spawn()
             .map_err(|e| format!("Failed to spawn: {}", e))?;
 
-        let stdout = child.stdout.take().expect("stdout not captured");
-        let stderr = child.stderr.take().expect("stderr not captured");
+        let stdout = child.stdout.take().ok_or_else(|| "stdout not captured".to_string())?;
+        let stderr = child.stderr.take().ok_or_else(|| "stderr not captured".to_string())?;
 
         let stdout_reader = BufReader::new(stdout);
         let mut stdout_lines = stdout_reader.lines();
@@ -192,8 +192,8 @@ impl ClaudeCli {
                 )
             })?;
 
-        let stdout = child.stdout.take().expect("stdout not captured");
-        let stderr = child.stderr.take().expect("stderr not captured");
+        let stdout = child.stdout.take().ok_or_else(|| "stdout not captured".to_string())?;
+        let stderr = child.stderr.take().ok_or_else(|| "stderr not captured".to_string())?;
 
         let seq = Arc::new(AtomicU64::new(1));
         let overflow_reported = Arc::new(AtomicBool::new(false));

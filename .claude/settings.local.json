@@ -9,7 +9,30 @@
       "Bash(gh repo edit:*)",
       "Bash(git rm:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(grep:*)",
+      "Bash(git stash:*)",
+      "Bash(git add:*)",
+      "Bash(tail:*)",
+      "Bash(cd /Users/timothyshortt/workspace/lulu/src-tauri && cargo check 2>&1)",
+      "Bash(head:*)",
+      "WebFetch(domain:2024.stateofjs.com)",
+      "WebFetch(domain:blog.angularux.com)",
+      "WebFetch(domain:nx.dev)",
+      "WebFetch(domain:developersvoice.com)",
+      "WebFetch(domain:www.infoq.com)",
+      "WebFetch(domain:www.technology.org)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:angularexperts.io)",
+      "WebFetch(domain:www.codertrove.com)",
+      "WebFetch(domain:blog.angular.dev)",
+      "WebFetch(domain:www.sencha.com)",
+      "WebFetch(domain:www.angulararchitects.io)",
+      "WebFetch(domain:blog.lunatech.com)",
+      "WebFetch(domain:angular.dev)",
+      "WebFetch(domain:www.altexsoft.com)",
+      "WebFetch(domain:www.okupter.com)",
+      "WebFetch(domain:formations-developpeur-frontend.itgalaxy.io)"
     ]
   }
 }
