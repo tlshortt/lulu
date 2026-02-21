@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::{collections::HashSet, fs};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 pub struct WorktreeEntry {
@@ -179,7 +179,7 @@ impl WorktreeService {
             }
 
             if entry.path.exists() {
-                let _ = fs::remove_dir_all(&entry.path);
+                self.remove_worktree_at_path(&entry.path, true)?;
             }
         }
 
