@@ -86,18 +86,19 @@ impl SessionRuntime {
 
 pub struct SessionSupervisor {
     runtimes: RwLock<HashMap<String, Arc<SessionRuntime>>>,
-    lifecycle_ops: std::sync::Mutex<HashSet<String>>,
+    lifecycle_ops: std::sync::Mutex<HashSet<(String, String)>>,
 }
 
 pub struct LifecycleOperationGuard<'a> {
     supervisor: &'a SessionSupervisor,
     session_id: String,
+    operation: String,
 }
 
 impl Drop for LifecycleOperationGuard<'_> {
     fn drop(&mut self) {
         if let Ok(mut ops) = self.supervisor.lifecycle_ops.lock() {
-            ops.remove(&self.session_id);
+            ops.remove(&(self.session_id.clone(), self.operation.clone()));
         }
     }
 }
@@ -119,18 +120,19 @@ impl SessionSupervisor {
             .lifecycle_ops
             .lock()
             .map_err(|_| "Lifecycle operation lock poisoned".to_string())?;
-        if ops.contains(session_id) {
+        let key = (session_id.to_string(), operation.to_string());
+        if ops.contains(&key) {
             return Err(format!(
-                "Session {} already has an in-progress lifecycle operation",
-                session_id
+                "Session {} already has an in-progress {} operation",
+                session_id, operation
             ));
         }
 
-        let _ = operation;
-        ops.insert(session_id.to_string());
+        ops.insert(key);
         Ok(LifecycleOperationGuard {
             supervisor: self,
             session_id: session_id.to_string(),
+            operation: operation.to_string(),
         })
     }
 
