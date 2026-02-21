@@ -337,6 +337,18 @@ impl SessionSupervisor {
             return Ok(());
         }
 
+        // Send SIGINT so the Claude CLI can clean up gracefully (flush state, run hooks).
+        // start_kill() would send SIGKILL and bypass all cleanup.
+        #[cfg(unix)]
+        if let Some(pid) = child.id() {
+            return nix::sys::signal::kill(
+                nix::unistd::Pid::from_raw(pid as i32),
+                nix::sys::signal::Signal::SIGINT,
+            )
+            .map_err(|err| format!("Failed to interrupt session process: {}", err));
+        }
+
+        // Non-Unix fallback (no direct SIGINT equivalent for child processes on Windows).
         child
             .start_kill()
             .map_err(|err| format!("Failed to interrupt session process: {}", err))
