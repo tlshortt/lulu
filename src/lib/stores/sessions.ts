@@ -105,9 +105,12 @@ const loadedSessionHistory = new Set<string>();
 const pendingSpawnSessionIds = new Set<string>();
 let listenerInitialized = false;
 let listenerInitializing = false;
+// Holds unlisten functions for any listeners that registered before a partial
+// failure. Cleaned up at the start of each retry so we never double-register.
+let activeUnlisteners: Array<() => void> = [];
 let sequenceCounter = 0;
 const canonicalSessionEventIds = new Set<string>();
-const TERMINAL_STATUSES = new Set(["completed", "failed", "killed"]);
+const TERMINAL_STATUSES = new Set(["completed", "failed", "killed", "interrupted"]);
 const FAILURE_STATUSES = new Set([
   "failed",
   "killed",
@@ -679,6 +682,7 @@ export function resetSessionEventStateForTests() {
   sequenceCounter = 0;
   listenerInitialized = false;
   listenerInitializing = false;
+  activeUnlisteners = [];
   initialSessionsHydrated.set(false);
   initialSessionsLoadError.set(null);
   initialSessionsRetryError.set(null);
@@ -1232,98 +1236,117 @@ export async function initSessionListeners() {
 
   listenerInitializing = true;
 
+  // Clean up any listeners that registered before a previous partial failure,
+  // so a retry never ends up with duplicate event handlers.
+  for (const unlisten of activeUnlisteners) {
+    unlisten();
+  }
+  activeUnlisteners = [];
+
   try {
-    await listen<SessionEvent>("session-event", (event) => {
-      routeSessionEvent(event.payload);
-    });
+    activeUnlisteners.push(
+      await listen<SessionEvent>("session-event", (event) => {
+        routeSessionEvent(event.payload);
+      }),
+    );
 
-    await listen<SessionDebugEvent>("session-debug", (event) => {
-      routeSessionDebugEvent(event.payload);
-    });
+    activeUnlisteners.push(
+      await listen<SessionDebugEvent>("session-debug", (event) => {
+        routeSessionDebugEvent(event.payload);
+      }),
+    );
 
-    await listen<{ session_id: string; line: string }>(
-      "session-output",
-      (event) => {
-        const { session_id: sessionId, line } = event.payload;
+    activeUnlisteners.push(
+      await listen<{ session_id: string; line: string }>(
+        "session-output",
+        (event) => {
+          const { session_id: sessionId, line } = event.payload;
+          if (canonicalSessionEventIds.has(sessionId)) {
+            return;
+          }
+          appendMessage(sessionId, `${line}\n`, true);
+        },
+      ),
+    );
+
+    activeUnlisteners.push(
+      await listen<string>("session-started", (event) => {
+        const sessionId = event.payload;
         if (canonicalSessionEventIds.has(sessionId)) {
           return;
         }
-        appendMessage(sessionId, `${line}\n`, true);
-      },
+
+        const timestamp = createTimestamp();
+        addEvent(sessionId, {
+          type: "status",
+          data: {
+            session_id: sessionId,
+            seq: nextSeq(),
+            timestamp,
+            status: "running",
+          },
+        });
+        updateSessionStatus(sessionId, "running", timestamp);
+      }),
     );
 
-    await listen<string>("session-started", (event) => {
-      const sessionId = event.payload;
-      if (canonicalSessionEventIds.has(sessionId)) {
-        return;
-      }
+    activeUnlisteners.push(
+      await listen<string>("session-complete", async (event) => {
+        const sessionId = event.payload;
+        if (canonicalSessionEventIds.has(sessionId)) {
+          await loadSessions();
+          return;
+        }
 
-      const timestamp = createTimestamp();
-      addEvent(sessionId, {
-        type: "status",
-        data: {
-          session_id: sessionId,
-          seq: nextSeq(),
-          timestamp,
-          status: "running",
-        },
-      });
-      updateSessionStatus(sessionId, "running", timestamp);
-    });
-
-    await listen<string>("session-complete", async (event) => {
-      const sessionId = event.payload;
-      if (canonicalSessionEventIds.has(sessionId)) {
+        flushMessageBuffer(sessionId);
+        const timestamp = createTimestamp();
+        addEvent(sessionId, {
+          type: "status",
+          data: {
+            session_id: sessionId,
+            seq: nextSeq(),
+            timestamp,
+            status: "completed",
+          },
+        });
+        updateSessionStatus(sessionId, "completed", timestamp);
         await loadSessions();
-        return;
-      }
+      }),
+    );
 
-      flushMessageBuffer(sessionId);
-      const timestamp = createTimestamp();
-      addEvent(sessionId, {
-        type: "status",
-        data: {
-          session_id: sessionId,
-          seq: nextSeq(),
-          timestamp,
-          status: "completed",
-        },
-      });
-      updateSessionStatus(sessionId, "completed", timestamp);
-      await loadSessions();
-    });
+    activeUnlisteners.push(
+      await listen<[string, string]>("session-error", async (event) => {
+        const [sessionId, error] = event.payload;
+        if (canonicalSessionEventIds.has(sessionId)) {
+          await loadSessions();
+          return;
+        }
 
-    await listen<[string, string]>("session-error", async (event) => {
-      const [sessionId, error] = event.payload;
-      if (canonicalSessionEventIds.has(sessionId)) {
+        const timestamp = createTimestamp();
+        const seq = nextSeq();
+        flushMessageBuffer(sessionId, seq, timestamp);
+        addEvent(sessionId, {
+          type: "error",
+          data: {
+            session_id: sessionId,
+            seq,
+            timestamp,
+            error,
+          },
+        });
+        addEvent(sessionId, {
+          type: "status",
+          data: {
+            session_id: sessionId,
+            seq: nextSeq(),
+            timestamp: createTimestamp(),
+            status: "failed",
+          },
+        });
+        updateSessionStatus(sessionId, "failed", timestamp);
         await loadSessions();
-        return;
-      }
-
-      const timestamp = createTimestamp();
-      const seq = nextSeq();
-      flushMessageBuffer(sessionId, seq, timestamp);
-      addEvent(sessionId, {
-        type: "error",
-        data: {
-          session_id: sessionId,
-          seq,
-          timestamp,
-          error,
-        },
-      });
-      addEvent(sessionId, {
-        type: "status",
-        data: {
-          session_id: sessionId,
-          seq: nextSeq(),
-          timestamp: createTimestamp(),
-          status: "failed",
-        },
-      });
-      updateSessionStatus(sessionId, "failed", timestamp);
-      await loadSessions();
-    });
+      }),
+    );
 
     listenerInitialized = true;
   } finally {

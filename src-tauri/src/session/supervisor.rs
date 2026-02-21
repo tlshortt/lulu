@@ -120,14 +120,14 @@ impl SessionSupervisor {
             .lifecycle_ops
             .lock()
             .map_err(|_| "Lifecycle operation lock poisoned".to_string())?;
-        let key = (session_id.to_string(), operation.to_string());
-        if ops.contains(&key) {
+        if let Some((_, in_progress)) = ops.iter().find(|(sid, _)| sid == session_id) {
             return Err(format!(
                 "Session {} already has an in-progress {} operation",
-                session_id, operation
+                session_id, in_progress
             ));
         }
 
+        let key = (session_id.to_string(), operation.to_string());
         ops.insert(key);
         Ok(LifecycleOperationGuard {
             supervisor: self,

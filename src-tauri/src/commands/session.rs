@@ -703,8 +703,20 @@ pub async fn resume_session(
     {
         Ok(spawned) => spawned,
         Err(err) => {
-            let _ = db.update_session_status(&id, &session.status);
-            let _ = db.update_failure_reason(&id, normalize_failure_reason(Some(&err)).as_deref());
+            if let Err(rollback_err) = db.update_session_status(&id, &session.status) {
+                eprintln!(
+                    "Failed to rollback session status after resume spawn failure for session {}: {}",
+                    id, rollback_err
+                );
+            }
+            if let Err(rollback_err) =
+                db.update_failure_reason(&id, normalize_failure_reason(Some(&err)).as_deref())
+            {
+                eprintln!(
+                    "Failed to write failure reason after resume spawn failure for session {}: {}",
+                    id, rollback_err
+                );
+            }
             return Err(err);
         }
     };

@@ -177,7 +177,7 @@ impl Database {
         let updated = tx.execute(
             "UPDATE sessions
              SET status = ?1, updated_at = ?2
-             WHERE id = ?3 AND status IN ('running', 'interrupting', 'resuming')",
+             WHERE id = ?3 AND status IN ('starting', 'running', 'interrupting', 'resuming')",
             params![status, now, id],
         )?;
 
