@@ -42,6 +42,9 @@ fn resolve_working_dir(working_dir: &str) -> Result<String, String> {
         }
 
         let suffix = trimmed.trim_start_matches("~/");
+        if suffix.is_empty() {
+            return Ok(home);
+        }
         return Ok(format!("{}/{}", home, suffix));
     }
 
@@ -810,6 +813,9 @@ mod tests {
 
         assert_eq!(resolved_home, home);
         assert_eq!(resolved_subdir, format!("{}/workspace", home));
+
+        let resolved_trailing = resolve_working_dir("~/").expect("bare tilde-slash should resolve");
+        assert_eq!(resolved_trailing, home, "~/ should resolve to home without trailing slash");
     }
 
     #[test]

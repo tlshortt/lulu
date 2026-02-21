@@ -136,29 +136,24 @@ impl WorktreeService {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut entries = Vec::new();
-        let mut current_path: Option<PathBuf> = None;
-        let mut current_prunable = false;
 
-        for line in stdout.lines() {
-            if let Some(path) = line.strip_prefix("worktree ") {
-                if let Some(existing_path) = current_path.take() {
-                    entries.push(WorktreeEntry {
-                        path: existing_path,
-                        prunable: current_prunable,
-                    });
+        // Porcelain output is blank-line-separated blocks; parse each block
+        // independently so field order within a block doesn't matter.
+        for block in stdout.split("\n\n") {
+            let mut path: Option<PathBuf> = None;
+            let mut prunable = false;
+
+            for line in block.lines() {
+                if let Some(p) = line.strip_prefix("worktree ") {
+                    path = Some(PathBuf::from(p));
+                } else if line.starts_with("prunable") {
+                    prunable = true;
                 }
-                current_path = Some(PathBuf::from(path));
-                current_prunable = false;
-            } else if line.starts_with("prunable") {
-                current_prunable = true;
             }
-        }
 
-        if let Some(existing_path) = current_path {
-            entries.push(WorktreeEntry {
-                path: existing_path,
-                prunable: current_prunable,
-            });
+            if let Some(p) = path {
+                entries.push(WorktreeEntry { path: p, prunable });
+            }
         }
 
         Ok(entries)
