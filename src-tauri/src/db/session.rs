@@ -292,7 +292,7 @@ impl Database {
         let mut conn = self.conn.lock().map_err(|_| DbError::Lock)?;
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
-        let mut stmt = tx.prepare("SELECT id FROM sessions WHERE status IN ('starting', 'running')")?;
+        let mut stmt = tx.prepare("SELECT id FROM sessions WHERE status IN ('starting', 'running', 'interrupting', 'resuming')")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
 
         let mut stale_ids = Vec::new();
@@ -309,7 +309,7 @@ impl Database {
                      restored_at = ?1,
                      recovery_hint = 1,
                      updated_at = ?1
-                 WHERE status IN ('starting', 'running')",
+                 WHERE status IN ('starting', 'running', 'interrupting', 'resuming')",
                 params![now],
             )?;
         }
