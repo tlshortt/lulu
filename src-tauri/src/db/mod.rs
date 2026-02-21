@@ -4,7 +4,8 @@ use std::sync::Mutex;
 
 pub mod session;
 pub use session::{
-    Session, SessionDashboardRow, SessionHistoryEvent, SessionMessage, SessionRunMetadata,
+    is_terminal_status, Session, SessionDashboardRow, SessionHistoryEvent, SessionMessage,
+    SessionRunMetadata,
 };
 
 pub struct Database {

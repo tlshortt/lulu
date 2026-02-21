@@ -9,7 +9,7 @@ use tempfile::tempdir;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, timeout, Duration};
 
-use tauri_app_lib::db::{init_database, Database, Session};
+use tauri_app_lib::db::{init_database, is_terminal_status, Database, Session};
 use tauri_app_lib::session::{ClaudeCli, SessionEventPayload, SessionSupervisor};
 
 #[derive(Clone)]
@@ -17,10 +17,6 @@ struct SessionSpec {
     id: String,
     prompt: String,
     expect_terminal: &'static str,
-}
-
-fn is_terminal_status(status: &str) -> bool {
-    matches!(status, "completed" | "failed" | "killed" | "interrupted")
 }
 
 async fn reduce_terminal_once(

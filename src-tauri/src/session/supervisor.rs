@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::db::Database;
+use crate::db::{Database, is_terminal_status};
 use crate::session::projection::normalize_failure_reason;
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
@@ -11,10 +11,6 @@ use tokio::process::Child;
 use tokio::time::sleep;
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
-
-fn is_terminal_status(status: &str) -> bool {
-    matches!(status, "completed" | "failed" | "killed" | "interrupted")
-}
 
 fn normalize_terminal_status(status: &str) -> &str {
     if status == "complete" || status == "done" {

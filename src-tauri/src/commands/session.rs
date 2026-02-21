@@ -1,4 +1,4 @@
-use crate::db::{Database, Session, SessionDashboardRow, SessionHistoryEvent, SessionMessage};
+use crate::db::{is_terminal_status, Database, Session, SessionDashboardRow, SessionHistoryEvent, SessionMessage};
 use crate::session::projection::{normalize_failure_reason, project_dashboard_row, DashboardSessionProjection};
 use crate::session::{ClaudeCli, SessionManager, SessionRuntime, SessionSupervisor, WorktreeService};
 use crate::session::{SessionEvent, SessionEventPayload};
@@ -12,8 +12,6 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
-
-const TERMINAL_STATUSES: [&str; 4] = ["completed", "failed", "killed", "interrupted"];
 
 #[derive(Clone, serde::Serialize)]
 struct SessionOutput {
@@ -111,10 +109,6 @@ fn normalize_spawn_session_error(error: &str, execution_dir: &str) -> String {
         "Failed to launch Claude CLI in '{}': {}. Verify the working directory and CLI configuration, then retry.",
         execution_dir, error
     )
-}
-
-fn is_terminal_status(status: &str) -> bool {
-    TERMINAL_STATUSES.contains(&status)
 }
 
 fn event_type(payload: &SessionEventPayload) -> &'static str {
@@ -694,7 +688,7 @@ pub async fn resume_session(
     }
 
     let (event_tx, event_rx) = mpsc::channel::<SessionEvent>(256);
-    let spawned = match cli
+    let mut spawned = match cli
         .spawn_resume_with_events(prompt, &execution_dir, &id, event_tx)
         .await
     {
@@ -706,7 +700,11 @@ pub async fn resume_session(
         }
     };
 
-    let _ = db.begin_run_attempt(&id, &run_id);
+    if let Err(err) = db.begin_run_attempt(&id, &run_id) {
+        let _ = spawned.child.kill().await;
+        let _ = db.update_session_status(&id, &session.status);
+        return Err(format!("Failed to persist resume run metadata: {}", err));
+    }
 
     let runtime = supervisor
         .register(id.clone(), session.name.clone(), spawned.child)

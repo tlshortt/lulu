@@ -2,7 +2,9 @@ use crate::db::{Database, DbError};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
-fn is_terminal_status(status: &str) -> bool {
+/// Returns `true` if `status` represents a terminal session state from which no further
+/// transitions are expected (completed, failed, killed, or interrupted).
+pub fn is_terminal_status(status: &str) -> bool {
     matches!(status, "completed" | "failed" | "killed" | "interrupted")
 }
 
