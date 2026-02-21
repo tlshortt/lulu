@@ -42,8 +42,7 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 let app = window.app_handle();
                 if let Some(state) = app.try_state::<Arc<Mutex<SessionManager>>>() {
-                    let runtime = tokio::runtime::Runtime::new().unwrap();
-                    runtime.block_on(async {
+                    tauri::async_runtime::block_on(async {
                         let manager = state.lock().await;
                         manager.kill_all().await;
                     });
